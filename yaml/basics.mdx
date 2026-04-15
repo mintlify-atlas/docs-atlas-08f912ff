@@ -1,0 +1,156 @@
+---
+title: "Convert YAML to and from JsonNode with Yaml2JsonNode"
+description: "Learn how to convert YAML documents to System.Text.Json JsonNode objects and back using the Yaml2JsonNode package and the YamlDotNet library."
+---
+
+`Yaml2JsonNode` bridges [YamlDotNet](https://www.nuget.org/packages/YamlDotNet/)'s representation model and `System.Text.Json.Nodes`. It lets you read YAML content into the same `JsonNode` tree that the rest of the `json-everything` ecosystem operates on, and convert `JsonNode` values back to YAML when you need to round-trip or produce YAML output.
+
+## Installation
+
+```bash
+dotnet add package Yaml2JsonNode
+```
+
+<Note>
+  `Yaml2JsonNode` depends on [YamlDotNet](https://www.nuget.org/packages/YamlDotNet/). It is pulled in automatically as a transitive dependency when you install `Yaml2JsonNode`.
+</Note>
+
+## Converting YAML to `JsonNode`
+
+### From a `YamlNode`
+
+The simplest conversion is from a single `YamlNode` (the base type in YamlDotNet's representation model):
+
+```csharp
+using YamlDotNet.RepresentationModel;
+using Yaml2JsonNode;
+
+var yamlNode = /* obtained from YamlDotNet */;
+JsonNode? jsonNode = yamlNode.ToJsonNode();
+```
+
+YamlDotNet node types map to `JsonNode` types as follows:
+
+| YamlDotNet type    | JsonNode type  |
+|--------------------|----------------|
+| `YamlMappingNode`  | `JsonObject`   |
+| `YamlSequenceNode` | `JsonArray`    |
+| `YamlScalarNode`   | `JsonValue`    |
+
+### From a `YamlDocument`
+
+A `YamlDocument` wraps the root node of a single YAML document:
+
+```csharp
+JsonNode? jsonNode = yamlDocument.ToJsonNode();
+```
+
+### From a `YamlStream`
+
+A `YamlStream` can contain multiple YAML documents separated by `---`. `ToJsonNode()` on a stream returns an `IEnumerable<JsonNode?>`, one element per document.
+
+```csharp
+using var reader = new StringReader(yamlText);
+var stream = new YamlStream();
+stream.Load(reader);
+
+IEnumerable<JsonNode?> nodes = stream.ToJsonNode();
+```
+
+### Full example: parse YAML text
+
+<Steps>
+  <Step title="Load the YAML stream">
+    Use YamlDotNet's `YamlStream` to parse raw YAML text.
+
+    ```csharp
+    var yaml = """
+        name: Alice
+        scores:
+          - 95
+          - 87
+          - 100
+        active: true
+        """;
+
+    using var reader = new StringReader(yaml);
+    var stream = new YamlStream();
+    stream.Load(reader);
+    ```
+  </Step>
+  <Step title="Convert to JsonNode">
+    Call `ToJsonNode()` on the stream or on an individual document.
+
+    ```csharp
+    JsonNode? node = stream.Documents[0].ToJsonNode();
+    // node["name"]   => "Alice"
+    // node["scores"] => [95, 87, 100]
+    // node["active"] => true
+    ```
+  </Step>
+</Steps>
+
+## Converting `JsonNode` to YAML
+
+`YamlConverter` also provides `ToYamlNode()` on any `JsonNode`, returning a `YamlNode` that you can add to a `YamlDocument` or serialize with YamlDotNet's `YamlStream`.
+
+```csharp
+var json = JsonNode.Parse(
+    """
+    {
+      "name": "Alice",
+      "scores": [95, 87, 100],
+      "active": true
+    }
+    """
+);
+
+YamlNode yamlNode = json!.ToYamlNode();
+
+var document = new YamlDocument(yamlNode);
+var stream   = new YamlStream(document);
+
+using var writer = new StringWriter();
+stream.Save(writer, assignAnchors: false);
+
+Console.WriteLine(writer.ToString());
+// name: Alice
+// scores:
+// - 95
+// - 87
+// - 100
+// active: true
+```
+
+## Converting to `JsonElement`
+
+If you need a `JsonElement` rather than `JsonNode`, use `ToJsonElement()`:
+
+```csharp
+JsonElement element = yamlNode.ToJsonElement();
+// or
+JsonElement element = yamlDocument.ToJsonElement();
+// or
+IEnumerable<JsonElement> elements = yamlStream.ToJsonElement();
+```
+
+<Note>
+  `ToJsonElement` serializes the node to JSON and re-parses it via `JsonDocument`. The returned `JsonElement` is a clone and does not hold a reference to the intermediate `JsonDocument`, so it is safe to use after the conversion call.
+</Note>
+
+## Scalar type mapping
+
+Plain (unquoted) YAML scalars are interpreted using the following rules:
+
+| YAML value | JSON type |
+|---|---|
+| `true`, `false` | `bool` |
+| Numeric string (e.g. `3.14`) | `decimal` |
+| `null`, `~`, empty | `null` |
+| Any other plain string | `string` |
+
+Quoted scalars (single-quoted, double-quoted, literal, or folded blocks) are always treated as strings regardless of their content.
+
+<Warning>
+  Not all valid YAML is representable in JSON. YAML features such as anchors, aliases, and non-string mapping keys have no direct JSON equivalent. `YamlConverter` will throw `NotSupportedException` when it encounters YAML that cannot be mapped to a JSON structure.
+</Warning>

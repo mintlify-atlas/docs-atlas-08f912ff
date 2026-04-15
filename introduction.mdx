@@ -1,0 +1,90 @@
+---
+title: "Json Everything: System.Text.Json library suite overview"
+description: "Json Everything is a set of System.Text.Json-based .NET libraries that implement JSON Schema, Path, Patch, Pointer, Logic, JSON-e, and YAML conversion."
+---
+
+Json Everything is a suite of independently-installable .NET libraries built on `System.Text.Json`. Each library implements a specific JSON standard or fills a gap in the platform's built-in JSON support — so you pull in only what your project actually needs, without dragging in a monolithic dependency.
+
+## What's included
+
+<CardGroup cols={2}>
+  <Card title="JsonSchema.Net" icon="shield-check" href="/schema/basics">
+    Full JSON Schema validation for drafts 6, 7, 2019-09, and 2020-12. Includes annotation collection, custom vocabularies, and multilingual error messages.
+  </Card>
+  <Card title="JsonSchema.Net.Generation" icon="wand-magic-sparkles" href="/schema/schema-generation">
+    Generate JSON Schema documents from .NET types using attributes and a fluent builder API.
+  </Card>
+  <Card title="JsonSchema.Net.DataGeneration" icon="database" href="/schema/data-generation">
+    Generate random JSON data instances that conform to a given schema, powered by Bogus.
+  </Card>
+  <Card title="JsonSchema.Net.Api" icon="server" href="/schema/aspnet-integration">
+    ASP.NET Core middleware that validates request bodies against a JSON Schema automatically.
+  </Card>
+  <Card title="JsonPath.Net" icon="magnifying-glass" href="/path/basics">
+    JSON Path querying per RFC 9535. Select and extract values from JSON documents using path expressions.
+  </Card>
+  <Card title="JsonPointer.Net" icon="location-crosshairs" href="/pointer/basics">
+    JSON Pointer navigation per RFC 6901, including Relative JSON Pointer and LINQ-expression-based pointer creation.
+  </Card>
+  <Card title="JsonPatch.Net" icon="code-merge" href="/patch/basics">
+    JSON Patch application and generation per RFC 6902. Apply a sequence of operations to a JSON document.
+  </Card>
+  <Card title="JsonLogic" icon="filter" href="/logic/basics">
+    Evaluate declarative, data-driven rules written in JSON Logic format. Supports custom operators.
+  </Card>
+  <Card title="JsonE.Net" icon="brackets-curly" href="/json-e/basics">
+    Evaluate JSON-e templates — a parameterization system for embedding context in JSON structures.
+  </Card>
+  <Card title="Json.More.Net" icon="toolbox" href="/more/json-more">
+    Extensions for deep equality, enum serialization (including `[Flags]`), and native AOT support.
+  </Card>
+  <Card title="Yaml2JsonNode" icon="file-code" href="/yaml/basics">
+    Convert YAML documents (via YamlDotNet) to and from `JsonNode` in both directions.
+  </Card>
+</CardGroup>
+
+## Design philosophy
+
+The primary goal of Json Everything is to ensure that common JSON functionality has first-class support in the `System.Text.Json` ecosystem. Rather than a single large library, each piece of functionality is its own NuGet package. You install only the libraries your project needs, and each one targets both .NET Standard 2.0 and .NET 8.
+
+Before adding a library to this suite, the project checks whether another well-maintained library already covers that function. If one exists, it isn't duplicated here. The result is a focused set of libraries that each do one thing well and comply fully with their respective specifications.
+
+<Tip>
+  If you need only JSON Schema validation, install `JsonSchema.Net`. If you later need path querying, add `JsonPath.Net` — no other changes required.
+</Tip>
+
+## Standards compliance
+
+Every library in this suite aims for complete compliance with its associated specification:
+
+| Library | Standard |
+|---|---|
+| JsonSchema.Net | JSON Schema drafts 6, 7, 2019-09, 2020-12 |
+| JsonPath.Net | RFC 9535 |
+| JsonPatch.Net | RFC 6902 |
+| JsonPointer.Net | RFC 6901, Relative JSON Pointer |
+| JsonLogic | jsonlogic.com specification |
+| JsonE.Net | json-e.js.org specification |
+
+JSON Schema compliance is independently verified against the [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite). Results across multiple implementations are publicly visible on [Bowtie](https://bowtie-json-schema.github.io/bowtie).
+
+<Note>
+  All libraries are MIT-licensed. Organizations generating revenue from this project are asked to pay a monthly maintenance fee via [GitHub Sponsors](https://github.com/sponsors/gregsdennis).
+</Note>
+
+## Getting help
+
+<CardGroup cols={2}>
+  <Card title="Slack community" icon="slack" href="https://join.slack.com/t/json-everything/shared_invite/zt-3cfmgde04-o09VBqj6YfpudxTuI3aRhA">
+    Join the Json Everything Slack workspace to ask questions and discuss the libraries with other users.
+  </Card>
+  <Card title="Stack Overflow" icon="stack-overflow" href="https://stackoverflow.com/questions/tagged/json-everything">
+    Search existing questions or post a new one using the `json-everything` tag.
+  </Card>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/json-everything/json-everything/issues">
+    Report bugs, request features, or propose new libraries directly on GitHub.
+  </Card>
+  <Card title="Interactive playground" icon="play" href="https://json-everything.net">
+    Try the libraries in your browser at json-everything.net without installing anything.
+  </Card>
+</CardGroup>

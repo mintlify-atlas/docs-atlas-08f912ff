@@ -1,0 +1,238 @@
+---
+title: "Generate JSON Schema from .NET types using attributes"
+description: "Use JsonSchema.Net.Generation to generate JSON Schema documents from .NET types, properties, and attributes without writing schema JSON by hand."
+---
+
+`JsonSchema.Net.Generation` extends the core `JsonSchema.Net` library with the ability to derive JSON Schema documents from .NET types at runtime. Instead of hand-writing schema JSON, you annotate your C# classes and the generator reflects over them to produce a matching schema.
+
+## Installation
+
+<CodeGroup>
+
+```bash dotnet CLI
+dotnet add package JsonSchema.Net.Generation
+```
+
+```powershell Package Manager Console
+Install-Package JsonSchema.Net.Generation
+```
+
+```xml PackageReference
+<PackageReference Include="JsonSchema.Net.Generation" Version="*" />
+```
+
+</CodeGroup>
+
+## Basic usage
+
+Call the `FromType<T>()` extension method on `JsonSchemaBuilder`, then call `Build()`:
+
+```csharp
+using Json.Schema;
+using Json.Schema.Generation;
+
+var schema = new JsonSchemaBuilder()
+    .FromType<MyType>()
+    .Build();
+```
+
+### A realistic example
+
+Given this type:
+
+```csharp
+public class Product
+{
+    [Title("Product name")]
+    [Description("The display name for the product.")]
+    [MinLength(1), MaxLength(200)]
+    public required string Name { get; set; }
+
+    [Description("Price in USD cents.")]
+    [Minimum(0)]
+    public int PriceInCents { get; set; }
+
+    [Nullable(false)]
+    public string? Sku { get; set; }
+
+    [Pattern(@"^\d{4}-\d{2}-\d{2}$")]
+    public string? ReleaseDate { get; set; }
+}
+```
+
+The generator produces:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "Name": {
+      "type": "string",
+      "title": "Product name",
+      "description": "The display name for the product.",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "PriceInCents": {
+      "type": "integer",
+      "description": "Price in USD cents.",
+      "minimum": 0
+    },
+    "Sku": {
+      "type": "string"
+    },
+    "ReleaseDate": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": ["Name"]
+}
+```
+
+## Attributes
+
+Decorate properties and types with attributes from the `Json.Schema.Generation` namespace to control schema output.
+
+### Metadata
+
+| Attribute | JSON Schema keyword | Notes |
+|---|---|---|
+| `[Title("…")]` | `title` | Applies to classes, structs, interfaces, enums, properties, and fields. |
+| `[Description("…")]` | `description` | Same targets as `Title`. A later `Description` on the same target replaces an earlier one. |
+| `[Id("…")]` | `$id` | Sets the `$id` keyword on the generated schema. |
+| `[Default(…)]` | `default` | Provides a default value. |
+
+### Validation constraints
+
+| Attribute | JSON Schema keyword | Applies to |
+|---|---|---|
+| `[MinLength(n)]` | `minLength` | `string` properties only |
+| `[MaxLength(n)]` | `maxLength` | `string` properties only |
+| `[Pattern("regex")]` | `pattern` | `string` properties only |
+| `[Minimum(n)]` | `minimum` | Numeric properties |
+| `[Maximum(n)]` | `maximum` | Numeric properties |
+| `[ExclusiveMinimum(n)]` | `exclusiveMinimum` | Numeric properties |
+| `[ExclusiveMaximum(n)]` | `exclusiveMaximum` | Numeric properties |
+| `[MultipleOf(n)]` | `multipleOf` | Numeric properties |
+| `[MinItems(n)]` | `minItems` | Array/collection properties |
+| `[MaxItems(n)]` | `maxItems` | Array/collection properties |
+| `[UniqueItems]` | `uniqueItems` | Array/collection properties |
+
+### Object structure
+
+| Attribute | JSON Schema keyword | Notes |
+|---|---|---|
+| `[Required]` | `required` | Adds the property name to the `required` array. |
+| `[Nullable(bool)]` | `type` (adds/removes `null`) | Overrides the nullability inferred from the .NET type. |
+| `[ReadOnly]` | `readOnly` | Marks a property as read-only. |
+| `[WriteOnly]` | `writeOnly` | Marks a property as write-only. |
+| `[JsonExclude]` | _(omits the property)_ | Prevents a property from appearing in the schema. |
+| `[AdditionalProperties(…)]` | `additionalProperties` | Controls whether additional properties are allowed. |
+
+### Constant and enumeration values
+
+| Attribute | JSON Schema keyword | Notes |
+|---|---|---|
+| `[Const(value)]` | `const` | Restricts the value to a single constant. |
+| `[Enum(v1, v2, …)]` | `enum` | Restricts the value to one of the listed values. |
+
+### XML doc comments
+
+The generator can read `<summary>` and `<remarks>` from an XML documentation file and map them to `description` and other keywords. Register the XML file in `SchemaGeneratorConfiguration`:
+
+```csharp
+var config = new SchemaGeneratorConfiguration();
+config.RegisterXmlCommentFile<MyType>("MyAssembly.xml");
+
+var schema = new JsonSchemaBuilder()
+    .FromType<MyType>(config)
+    .Build();
+```
+
+## SchemaGeneratorConfiguration
+
+Pass a `SchemaGeneratorConfiguration` to `FromType<T>()` to control generator behaviour:
+
+```csharp
+var config = new SchemaGeneratorConfiguration
+{
+    PropertyNameResolver  = PropertyNameResolvers.CamelCase,
+    PropertyOrder         = PropertyOrder.ByName,
+    DefaultDialect        = MetaSchemas.Draft202012Id,
+    StrictConditionals    = false,
+};
+
+var schema = new JsonSchemaBuilder()
+    .FromType<MyType>(config)
+    .Build();
+```
+
+### Configuration properties
+
+<ParamField body="PropertyNameResolver" type="PropertyNameResolver" default="AsDeclared">
+  A delegate that maps a `MemberInfo` to the JSON property name. The built-in resolvers are:
+
+  | Resolver | Example output |
+  |---|---|
+  | `AsDeclared` | `MyProperty` (no change) |
+  | `CamelCase` | `myProperty` |
+  | `PascalCase` | `MyProperty` |
+  | `SnakeCase` | `My_Property` |
+  | `LowerSnakeCase` | `my_property` |
+  | `UpperSnakeCase` | `MY_PROPERTY` |
+  | `KebabCase` | `My-Property` |
+  | `UpperKebabCase` | `MY-PROPERTY` |
+
+  You can supply any `Func<MemberInfo, string>` as a custom resolver.
+</ParamField>
+
+<ParamField body="PropertyOrder" type="PropertyOrder" default="(declaration order)">
+  Controls the order in which properties appear in the generated schema. Supports declaration order and alphabetical order by name.
+</ParamField>
+
+<ParamField body="DefaultDialect" type="Uri?" default="null">
+  When set, the generator includes a `$schema` keyword with this URI in every generated schema. Common values are `MetaSchemas.Draft202012Id` and `MetaSchemas.Draft201909Id`. Defaults to `null`, which omits the `$schema` keyword.
+</ParamField>
+
+<ParamField body="StrictConditionals" type="bool" default="false">
+  When `true`, properties that are referenced in conditional keywords (`if`/`then`/`else`) are defined only inside their respective `then` subschemas, and a top-level `unevaluatedProperties: false` is added. When `false`, those properties are defined globally.
+</ParamField>
+
+<ParamField body="ExternalReferences" type="Dictionary&lt;Type, Uri&gt;">
+  Maps .NET types to external schema `$id` URIs. When the generator encounters one of these types, it emits a `$ref` pointing to the external URI instead of generating an inline schema.
+</ParamField>
+
+<ParamField body="Refiners" type="List&lt;ISchemaRefiner&gt;">
+  A list of `ISchemaRefiner` implementations that run after attribute processing. See [Custom refiners](#custom-refiners).
+</ParamField>
+
+## Custom refiners
+
+An `ISchemaRefiner` runs after all attributes have been processed and lets you add, remove, or modify schema keywords before the final `JsonSchema` is constructed.
+
+```csharp
+public class AddExampleRefiner : ISchemaRefiner
+{
+    public bool ShouldRun(SchemaGenerationContextBase context)
+        => context.Type == typeof(string);
+
+    public void Run(SchemaGenerationContextBase context)
+    {
+        context.Intents.Add(new ExamplesIntent(["hello", "world"]));
+    }
+}
+
+var config = new SchemaGeneratorConfiguration();
+config.Refiners.Add(new AddExampleRefiner());
+
+var schema = new JsonSchemaBuilder()
+    .FromType<MyType>(config)
+    .Build();
+```
+
+`ShouldRun` receives the generation context and returns `true` when the refiner should execute. `Run` mutates the `context.Intents` collection, which maps directly to schema keywords.
+
+<Tip>
+  `ISchemaRefiner` is the preferred extension point for cross-cutting schema concerns — such as always adding `examples`, enforcing naming conventions, or injecting custom keywords — without scattering that logic across many individual attribute definitions.
+</Tip>

@@ -1,0 +1,153 @@
+---
+title: 'Apply and generate JSON Patch documents in .NET apps'
+description: 'Learn how to install JsonPatch.Net, apply RFC 6902 patch documents, build patches with PatchOperation factories, inspect PatchResult, and auto-generate patches.'
+---
+
+JsonPatch.Net is a full implementation of [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902), the JSON Patch specification. A JSON Patch is an ordered list of operations that transforms one JSON document into another. You can deserialize patches from JSON, build them in code, apply them to any `JsonNode`, and even generate a patch automatically by diffing two documents.
+
+## Installation
+
+```bash
+dotnet add package JsonPatch.Net
+```
+
+## Deserializing and applying a patch
+
+Use `JsonSerializer.Deserialize<JsonPatch>` to parse a patch document, then call `Apply` to run it against a target:
+
+```csharp
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Json.Patch;
+
+var patchString = """
+[
+  { "op": "replace", "path": "/name", "value": "Alice" },
+  { "op": "add",     "path": "/email", "value": "alice@example.com" }
+]
+""";
+
+var patch = JsonSerializer.Deserialize<JsonPatch>(patchString);
+var doc   = JsonNode.Parse("{\"name\":\"Bob\"}");
+
+var result = patch.Apply(doc);
+```
+
+## Building a patch inline
+
+Construct a `JsonPatch` directly using `PatchOperation` factory methods. Each method accepts `JsonPointer` values for paths:
+
+```csharp
+using Json.Patch;
+using Json.Pointer;
+using System.Text.Json.Nodes;
+
+var patch = new JsonPatch(
+    PatchOperation.Add(JsonPointer.Parse("/foo/bar"), JsonNode.Parse("\"baz\"")),
+    PatchOperation.Test(JsonPointer.Parse("/foo/biz"), JsonNode.Parse("false"))
+);
+```
+
+## Operation types
+
+RFC 6902 defines six operation types. Each is created with a static factory method on `PatchOperation`:
+
+| Operation | Factory method | Required fields |
+|---|---|---|
+| `add` | `PatchOperation.Add(path, value)` | `path`, `value` |
+| `remove` | `PatchOperation.Remove(path)` | `path` |
+| `replace` | `PatchOperation.Replace(path, value)` | `path`, `value` |
+| `move` | `PatchOperation.Move(from, path)` | `from`, `path` |
+| `copy` | `PatchOperation.Copy(from, path)` | `from`, `path` |
+| `test` | `PatchOperation.Test(path, value)` | `path`, `value` |
+
+```csharp
+using Json.Patch;
+using Json.Pointer;
+using System.Text.Json.Nodes;
+
+var patch = new JsonPatch(
+    PatchOperation.Add(JsonPointer.Parse("/users/0/role"), JsonNode.Parse("\"admin\"")),
+    PatchOperation.Remove(JsonPointer.Parse("/users/0/legacy")),
+    PatchOperation.Replace(JsonPointer.Parse("/users/0/name"), JsonNode.Parse("\"Alice\"")),
+    PatchOperation.Move(JsonPointer.Parse("/users/0/phone"), JsonPointer.Parse("/users/0/contact/phone")),
+    PatchOperation.Copy(JsonPointer.Parse("/users/0/email"), JsonPointer.Parse("/users/0/contact/email")),
+    PatchOperation.Test(JsonPointer.Parse("/users/0/active"), JsonNode.Parse("true"))
+);
+```
+
+<Note>
+  Operations are applied in order. If any operation fails, `Apply` stops and returns an error result — subsequent operations are not run.
+</Note>
+
+## Inspecting the result
+
+`Apply` returns a `PatchResult`. Check `IsSuccess` before using the output:
+
+```csharp
+var result = patch.Apply(doc);
+
+if (result.IsSuccess)
+{
+    Console.WriteLine(result.Result); // the patched JsonNode
+}
+else
+{
+    Console.WriteLine($"Patch failed: {result.Error}");
+}
+```
+
+| Property | Type | Description |
+|---|---|---|
+| `IsSuccess` | `bool` | `true` when all operations applied without error |
+| `Result` | `JsonNode?` | The patched document, or `null` on failure |
+| `Error` | `string?` | Human-readable error message when `IsSuccess` is `false` |
+
+<Warning>
+  `Apply` does not modify the original document in place. It returns a new `JsonNode` tree. The source document you pass in is left unchanged.
+</Warning>
+
+## Generating a patch automatically
+
+Call the `CreatePatch` extension method on any `JsonNode` to compute the diff between two documents. The result is a minimal `JsonPatch` that transforms the source into the target:
+
+```csharp
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Json.Patch;
+
+var start = JsonNode.Parse("""
+[
+  {"test":"test123"},
+  {"test":"test321"},
+  {"test":[1,2,3]},
+  {"test":[1,2,4]}
+]
+""");
+
+var target = new JsonArray
+{
+    new JsonObject { ["test"] = "test123" },
+    new JsonObject { ["test"] = "test32132" },
+    new JsonObject { ["test1"] = "test321" },
+    new JsonObject { ["test"] = new JsonArray { 1, 2, 3 } },
+    new JsonObject { ["test"] = new JsonArray { 1, 2, 3 } },
+};
+
+var patch = start.CreatePatch(target);
+
+Console.WriteLine(JsonSerializer.Serialize(patch));
+/*
+[
+  {"op":"replace","path":"/1/test","value":"test32132"},
+  {"op":"remove","path":"/2/test"},
+  {"op":"add","path":"/2/test1","value":"test321"},
+  {"op":"replace","path":"/3/test/2","value":3},
+  {"op":"add","path":"/4","value":{"test":[1,2,3]}}
+]
+*/
+```
+
+<Tip>
+  `CreatePatch` produces a semantically correct but not necessarily minimal patch. For documents with large arrays, the generated patch may include more operations than a hand-crafted one.
+</Tip>

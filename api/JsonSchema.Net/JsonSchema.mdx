@@ -1,0 +1,241 @@
+---
+title: 'JsonSchema class — JsonSchema.Net API reference page'
+description: 'API reference for the JsonSchema class in JsonSchema.Net. Load schemas from files or text, evaluate JSON instances, and navigate schema structure.'
+---
+
+The `JsonSchema` class is the central type in `JsonSchema.Net`. It represents a parsed JSON Schema document and exposes methods to evaluate JSON instances, load schemas from various sources, and traverse the schema graph.
+
+`JsonSchema` implements `IBaseDocument` and carries a custom `JsonConverter` for transparent `System.Text.Json` serialization.
+
+## Static fields
+
+<ResponseField name="True" type="JsonSchema">
+  The boolean `true` schema. Every JSON instance passes validation against this schema. Its `BaseUri` is `https://json-schema.org/true`.
+</ResponseField>
+
+<ResponseField name="False" type="JsonSchema">
+  The boolean `false` schema. Every JSON instance fails validation against this schema. Its `BaseUri` is `https://json-schema.org/false`.
+</ResponseField>
+
+## Properties
+
+<ResponseField name="BoolValue" type="bool?">
+  For boolean schemas (`true` / `false`), returns the boolean value. Returns `null` for object-based schemas.
+</ResponseField>
+
+<ResponseField name="BaseUri" type="Uri">
+  The base URI of this schema. Derived from the `$id` keyword when present; otherwise a randomly generated URI matching `https://json-everything.lib/{guid}`. May change after the first evaluation if the schema contains an `$id` or is embedded in a parent schema.
+</ResponseField>
+
+<ResponseField name="Root" type="JsonSchemaNode">
+  The root node of the parsed schema tree. Use this to traverse or inspect the schema structure programmatically.
+</ResponseField>
+
+## Static factory methods
+
+### FromFile
+
+Reads a JSON file from disk and builds a `JsonSchema`.
+
+```csharp
+public static JsonSchema FromFile(
+    string fileName,
+    BuildOptions? options = null,
+    Uri? baseUri = null)
+```
+
+<ParamField body="fileName" type="string" required>
+  The path to the JSON Schema file. Must not be URL-encoded because `Uri` re-encodes the path internally.
+</ParamField>
+
+<ParamField body="options" type="BuildOptions?">
+  Optional build options controlling registry and dialect behaviour. Defaults to `BuildOptions.Default`.
+</ParamField>
+
+<ParamField body="baseUri" type="Uri?">
+  Optional base URI for reference resolution. Defaults to a `file://` URI derived from `fileName`.
+</ParamField>
+
+<ResponseField name="returns" type="JsonSchema">
+  A newly constructed `JsonSchema` instance.
+</ResponseField>
+
+```csharp
+var schema = JsonSchema.FromFile("schemas/user.json");
+var result = schema.Evaluate(JsonDocument.Parse("""{"name":"Alice"}""").RootElement);
+```
+
+---
+
+### FromText
+
+Parses a JSON string and builds a `JsonSchema`.
+
+```csharp
+public static JsonSchema FromText(
+    string jsonText,
+    BuildOptions? buildOptions = null,
+    Uri? baseUri = null,
+    JsonDocumentOptions? jsonOptions = null)
+```
+
+<ParamField body="jsonText" type="string" required>
+  A valid JSON string representing a JSON Schema.
+</ParamField>
+
+<ParamField body="buildOptions" type="BuildOptions?">
+  Optional build options. Defaults to `BuildOptions.Default`.
+</ParamField>
+
+<ParamField body="baseUri" type="Uri?">
+  Optional base URI. When omitted, a random URI is generated.
+</ParamField>
+
+<ParamField body="jsonOptions" type="JsonDocumentOptions?">
+  Options forwarded to `JsonDocument.Parse`.
+</ParamField>
+
+<ResponseField name="returns" type="JsonSchema">
+  A newly constructed `JsonSchema` instance.
+</ResponseField>
+
+```csharp
+var schema = JsonSchema.FromText("""
+    {
+      "type": "object",
+      "properties": {
+        "age": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["age"]
+    }
+    """);
+
+var result = schema.Evaluate(JsonDocument.Parse("""{"age": 25}""").RootElement);
+Console.WriteLine(result.IsValid); // true
+```
+
+---
+
+### Build
+
+Builds a `JsonSchema` from an already-parsed `JsonElement`.
+
+```csharp
+public static JsonSchema Build(
+    JsonElement root,
+    BuildOptions? options = null,
+    Uri? baseUri = null)
+```
+
+<ParamField body="root" type="JsonElement" required>
+  The root `JsonElement` representing the schema. Must be a JSON boolean or object.
+</ParamField>
+
+<ParamField body="options" type="BuildOptions?">
+  Optional build options.
+</ParamField>
+
+<ParamField body="baseUri" type="Uri?">
+  Optional base URI for reference resolution.
+</ParamField>
+
+<ResponseField name="returns" type="JsonSchema">
+  A `JsonSchema` instance. Returns the singleton `True` or `False` for boolean schemas.
+</ResponseField>
+
+---
+
+### BuildNode
+
+Builds a single `JsonSchemaNode` from a `BuildContext`. Called internally during schema construction and by keyword implementations that need to build subschemas.
+
+```csharp
+public static JsonSchemaNode BuildNode(BuildContext context)
+```
+
+<ParamField body="context" type="BuildContext" required>
+  The build context containing the local schema element, dialect, base URI, and options.
+</ParamField>
+
+<ResponseField name="returns" type="JsonSchemaNode">
+  The constructed schema node including its keyword data and any registered anchors.
+</ResponseField>
+
+## Instance methods
+
+### Evaluate
+
+Evaluates a JSON instance against this schema.
+
+```csharp
+public EvaluationResults Evaluate(
+    JsonElement instance,
+    EvaluationOptions? options = null)
+```
+
+<ParamField body="instance" type="JsonElement" required>
+  The JSON value to validate.
+</ParamField>
+
+<ParamField body="options" type="EvaluationOptions?">
+  Evaluation settings. Controls output format, format validation, and annotation collection. Defaults to `EvaluationOptions.Default`.
+</ParamField>
+
+<ResponseField name="returns" type="EvaluationResults">
+  Results including `IsValid`, errors, annotations, and optionally nested detail nodes.
+</ResponseField>
+
+```csharp
+var schema = JsonSchema.FromText("""{"type": "string", "minLength": 1}""");
+
+var options = new EvaluationOptions
+{
+    OutputFormat = OutputFormat.List
+};
+
+var result = schema.Evaluate(
+    JsonDocument.Parse("""{"value": ""}""").RootElement,
+    options);
+
+Console.WriteLine(result.IsValid); // false
+```
+
+---
+
+### FindSubschema
+
+Finds a subschema node at a specific JSON Pointer path within this schema.
+
+```csharp
+public JsonSchemaNode? FindSubschema(JsonPointer pointer, BuildContext context)
+```
+
+<ParamField body="pointer" type="JsonPointer" required>
+  A JSON Pointer indicating the location of the subschema within the root schema.
+</ParamField>
+
+<ParamField body="context" type="BuildContext" required>
+  The build context used if the subschema needs to be constructed dynamically.
+</ParamField>
+
+<ResponseField name="returns" type="JsonSchemaNode?">
+  The subschema node at the given pointer, or `null` if no matching node exists.
+</ResponseField>
+
+## Implicit conversion
+
+`JsonSchema` defines an implicit conversion from `bool`:
+
+```csharp
+JsonSchema trueSchema = true;   // equivalent to JsonSchema.True
+JsonSchema falseSchema = false; // equivalent to JsonSchema.False
+```
+
+## Serialization
+
+`JsonSchema` ships with `JsonSchemaJsonConverter` which is registered via `[JsonConverter]`. Pass a `JsonSchema` directly to `JsonSerializer` — no additional configuration is needed.
+
+```csharp
+var json = JsonSerializer.Serialize(schema);
+var deserialized = JsonSerializer.Deserialize<JsonSchema>(json);
+```

@@ -1,0 +1,132 @@
+---
+title: "Validate ASP.NET Core request bodies with JSON Schema"
+description: "Add JsonSchema.Net.Api to automatically validate incoming request bodies against JSON Schema in ASP.NET Core controllers and minimal APIs."
+---
+
+`JsonSchema.Net.Api` integrates JSON Schema validation into the ASP.NET Core request pipeline. When enabled, request bodies are validated against a schema derived from the parameter type before your action or handler code executes. Validation failures produce a structured `400 Bad Request` response automatically.
+
+## Installation
+
+<CodeGroup>
+
+```bash dotnet CLI
+dotnet add package JsonSchema.Net.Api
+```
+
+```powershell Package Manager Console
+Install-Package JsonSchema.Net.Api
+```
+
+```xml PackageReference
+<PackageReference Include="JsonSchema.Net.Api" Version="*" />
+```
+
+</CodeGroup>
+
+## Adding to the DI container
+
+Call `AddJsonSchemaValidation()` on `IServiceCollection` in your application setup. This registers the `JsonSchemaValidationFilter`, the `ValidatingJsonModelBinderProvider`, and the required `JsonSerializerOptions` configuration for both MVC and minimal API pipelines.
+
+```csharp
+using Json.Schema.Api;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddJsonSchemaValidation();   // <-- add this
+
+var app = builder.Build();
+app.MapControllers();
+app.Run();
+```
+
+### Custom configuration
+
+Pass a delegate to `AddJsonSchemaValidation` to configure the underlying `GenerativeValidatingJsonConverter`. The delegate receives the converter instance and lets you override the schema generator configuration and evaluation options:
+
+```csharp
+builder.Services.AddJsonSchemaValidation(converter =>
+{
+    converter.GeneratorConfiguration.PropertyNameResolver =
+        PropertyNameResolvers.CamelCase;
+
+    converter.EvaluationOptions.OutputFormat =
+        OutputFormat.Hierarchical;
+
+    converter.EvaluationOptions.RequireFormatValidation = true;
+});
+```
+
+When no delegate is supplied, the library applies sensible defaults:
+
+- `PropertyNameResolver` → `CamelCase`
+- `OutputFormat` → `Hierarchical`
+- `RequireFormatValidation` → `true`
+
+## Source generation vs. runtime generation
+
+By default, schemas are generated at compile time using source generation for types decorated with `[GenerateJsonSchema]`. Settings like property naming, property order, and strict conditionals must be configured on that attribute when source generation is active.
+
+The `GeneratorConfiguration` on the converter only affects runtime schema generation, which is used when:
+- Source generation is disabled via `<DisableJsonSchemaSourceGeneration>true</DisableJsonSchemaSourceGeneration>` in the project file, or
+- A `[JsonSchema]` attribute is used to point to a hand-written schema.
+
+## How validation errors are returned
+
+`JsonSchemaValidationFilter` intercepts the model state after binding. If the model state contains errors whose keys are JSON Pointer paths (starting with `/` or empty string), the filter short-circuits the pipeline and returns a `400 Bad Request` containing a `ProblemDetails` payload:
+
+```json
+{
+  "type": "https://json-everything.net/errors/validation",
+  "title": "Validation Error",
+  "status": 400,
+  "detail": "One or more validation errors occurred.",
+  "errors": {
+    "/name": ["Value is not a valid string."],
+    "/age":  ["Value is below the minimum of 0."]
+  }
+}
+```
+
+The `errors` extension property is a dictionary keyed by JSON Pointer path. Each value is a list of error messages for that location.
+
+The filter is registered as both an `IActionFilter` and an `IAlwaysRunResultFilter`. It handles both:
+- **Partial binding success** — caught in `OnActionExecuting`, before the action body runs.
+- **Total binding failure** — caught in `OnResultExecuting`, even when model binding could not produce an object at all.
+
+If the model state errors do not follow the JSON Pointer format (i.e. they come from standard MVC model binding rather than JSON Schema validation), the filter passes through without modifying the response.
+
+## ValidatingJsonModelBinder
+
+The `ValidatingJsonModelBinderProvider` inserts `ValidatingJsonModelBinder` at the front of the model binder provider list. This binder takes over JSON body deserialization for MVC actions and wraps it with JSON Schema validation before the result reaches the action. Any validation errors are written into `ModelState` using their JSON Pointer paths as keys, which `JsonSchemaValidationFilter` then picks up.
+
+<Note>
+  For minimal API endpoints, validation is performed by the `GenerativeValidatingJsonConverter` added to `JsonSerializerOptions`. The converter validates during deserialization rather than through a model binder.
+</Note>
+
+## Controller example
+
+```csharp
+[ApiController]
+[Route("[controller]")]
+public class ProductsController : ControllerBase
+{
+    [HttpPost]
+    public IActionResult Create(CreateProductRequest request)
+    {
+        // If execution reaches here, request has already passed schema validation.
+        return Ok(new { request.Name, request.PriceInCents });
+    }
+}
+
+public class CreateProductRequest
+{
+    [MinLength(1), MaxLength(200)]
+    public required string Name { get; set; }
+
+    [Minimum(0)]
+    public int PriceInCents { get; set; }
+}
+```
+
+A request body that violates the constraints — for example an empty `Name` — will never reach the action body. The filter returns the `ProblemDetails` response before the controller code runs.

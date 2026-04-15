@@ -1,0 +1,144 @@
+---
+title: 'Navigate JSON documents with JsonPointer.Net (RFC 6901)'
+description: 'Learn how to install JsonPointer.Net, parse and build RFC 6901 JSON Pointers, evaluate against JsonElement and JsonNode, and use Relative JSON Pointer.'
+---
+
+JsonPointer.Net is a full implementation of [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901.html), the JSON Pointer specification. A JSON Pointer is a string like `/store/book/0/title` that unambiguously identifies a single value inside a JSON document. The library also supports building pointers from LINQ expressions for type-safe navigation and implements Relative JSON Pointer for context-relative traversal.
+
+## Installation
+
+```bash
+dotnet add package JsonPointer.Net
+```
+
+## Parsing a pointer
+
+Use `JsonPointer.Parse` to parse a pointer string. Each `/`-separated token identifies one step into the document. An empty string `""` refers to the document root:
+
+```csharp
+using Json.Pointer;
+
+var pointer = JsonPointer.Parse("/objects/and/3/arrays");
+```
+
+Use `TryParse` when the input may be invalid:
+
+```csharp
+if (JsonPointer.TryParse("/foo/bar", out var pointer))
+{
+    // pointer is valid
+}
+```
+
+<Note>
+  RFC 6901 uses `~0` to represent a literal `~` and `~1` to represent a literal `/` within a segment. For example, the property key `a/b` is written as `/a~1b`.
+</Note>
+
+## Building a pointer from segments
+
+`JsonPointer.Create` accepts one or more segments and joins them with `/` separators. Pass strings for property names and integers for array indices:
+
+```csharp
+// Equivalent to /objects/and/3/arrays
+var pointer = JsonPointer.Create("object", "and", 3, "arrays");
+```
+
+## Building from a LINQ expression
+
+When you have a .NET type that mirrors your JSON structure, `JsonPointer.Create<T>` derives the pointer directly from a lambda expression. This is type-safe and refactoring-friendly:
+
+```csharp
+public class MyObject
+{
+    public Objects objects { get; set; } = new();
+}
+
+public class Objects
+{
+    public Item[] and { get; set; } = [];
+}
+
+public class Item
+{
+    public string arrays { get; set; } = "";
+}
+
+// Produces /objects/and/3/arrays
+var pointer = JsonPointer.Create<MyObject>(x => x.objects.and[3].arrays);
+```
+
+<Tip>
+  The LINQ-expression builder uses the property names as serialized by `System.Text.Json`. If a property has `[JsonPropertyName("title")]`, the generated pointer segment uses `"title"`, not the C# property name.
+</Tip>
+
+## Evaluating against JsonElement
+
+Call `Evaluate` on a pointer and pass a `JsonElement`. The method returns a nullable `JsonElement?`: non-null when the path exists, `null` when it does not:
+
+```csharp
+using System.Text.Json;
+using Json.Pointer;
+
+using var doc = JsonDocument.Parse(
+    "{\"objects\":{\"and\":[\"item zero\",null,2,{\"arrays\":\"found me\"}]}}");
+
+var pointer = JsonPointer.Parse("/objects/and/3/arrays");
+var result = pointer.Evaluate(doc.RootElement);
+
+Console.WriteLine(result); // "found me"
+```
+
+## Evaluating against JsonNode
+
+Call `TryEvaluate` on a pointer and pass a `JsonNode`. The method returns `true` on success and sets the `out` parameter:
+
+```csharp
+using System.Text.Json.Nodes;
+using Json.Pointer;
+
+var node = JsonNode.Parse(
+    "{\"objects\":{\"and\":[\"item zero\",null,2,{\"arrays\":\"found me\"}]}}");
+
+var pointer = JsonPointer.Parse("/objects/and/3/arrays");
+var success = pointer.TryEvaluate(node, out var result);
+
+Console.WriteLine(success); // true
+Console.WriteLine(result);  // "found me"
+```
+
+<Note>
+  Use `Evaluate` with `JsonElement` when working with `JsonDocument` for read-only, low-allocation access. Use `TryEvaluate` with `JsonNode` when you need a mutable tree.
+</Note>
+
+## Relative JSON Pointer
+
+`RelativeJsonPointer` extends JSON Pointer with upward traversal. A relative pointer begins with a non-negative integer — the number of levels to go up — followed by either a JSON Pointer or `#` to return the current key or index rather than the value.
+
+```csharp
+using Json.Pointer;
+
+// "1/foo" — go up one level, then navigate to /foo
+var rel = RelativeJsonPointer.Parse("1/foo");
+
+var node = JsonNode.Parse("{\"a\":{\"b\":\"hello\",\"foo\":\"world\"}}");
+// Evaluate relative to /a/b (the "hello" node)
+var context = node!["a"]!["b"]!;
+
+rel.TryEvaluate(context, out var result);
+Console.WriteLine(result); // world
+```
+
+Build relative pointers without parsing:
+
+```csharp
+// Go up 2 levels then navigate to /name
+var rel = RelativeJsonPointer.FromPointer(2, JsonPointer.Parse("/name"));
+
+// Go up 1 level and return the array index of the current node
+var indexQuery = RelativeJsonPointer.IndexQuery(1);
+```
+
+| Factory method | Description |
+|---|---|
+| `RelativeJsonPointer.FromPointer(steps, pointer)` | Navigate up `steps` levels then follow `pointer` |
+| `RelativeJsonPointer.IndexQuery(steps)` | Navigate up `steps` levels and return the key or index of that node |

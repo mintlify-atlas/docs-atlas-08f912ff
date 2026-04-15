@@ -1,0 +1,128 @@
+---
+title: 'JsonPatch class — JsonPatch.Net API reference page'
+description: 'API reference for the JsonPatch class in JsonPatch.Net. Apply RFC 6902 JSON Patch documents to JsonNode instances and inspect the operation list.'
+---
+
+`JsonPatch` models a JSON Patch document as defined in RFC 6902. It holds an ordered, read-only list of `PatchOperation` values and exposes a single `Apply` method that executes those operations against a JSON document.
+
+## Constructor
+
+```csharp
+public JsonPatch(params PatchOperation[] operations)
+public JsonPatch(IEnumerable<PatchOperation> operations)
+```
+
+<ParamField body="operations" type="PatchOperation[]" required>
+  One or more patch operations to include. Operations are applied in order; the first failure stops processing.
+</ParamField>
+
+```csharp
+using Json.Patch;
+using Json.Pointer;
+
+var patch = new JsonPatch(
+    PatchOperation.Add(JsonPointer.Create("name"), JsonNode.Parse("""\"Alice\"""")),
+    PatchOperation.Add(JsonPointer.Create("age"),  JsonNode.Parse("30"))
+);
+```
+
+## Properties
+
+<ResponseField name="Operations" type="IReadOnlyList&lt;PatchOperation&gt;">
+  The ordered, read-only list of patch operations in this document.
+</ResponseField>
+
+## Methods
+
+### Apply
+
+Applies the patch operations to a JSON document and returns the result.
+
+```csharp
+public PatchResult Apply(JsonNode? source)
+```
+
+<ParamField body="source" type="JsonNode?" required>
+  The JSON document to patch. The source is deep-cloned before patching, so the original is never mutated.
+</ParamField>
+
+<ResponseField name="returns" type="PatchResult">
+  A result object containing the modified document or an error message.
+</ResponseField>
+
+Operations are applied sequentially. If any operation fails, processing stops immediately and the result carries the error message at the index of the failing operation.
+
+```csharp
+var document = JsonNode.Parse("""{"name": "Bob", "score": 10}""");
+
+var patch = new JsonPatch(
+    PatchOperation.Replace(JsonPointer.Create("name"), JsonNode.Parse("""\"Alice\"""")),
+    PatchOperation.Add(JsonPointer.Create("active"), JsonNode.Parse("true")),
+    PatchOperation.Remove(JsonPointer.Create("score"))
+);
+
+var result = patch.Apply(document);
+
+if (result.IsSuccess)
+    Console.WriteLine(result.Result); // {"name":"Alice","active":true}
+else
+    Console.WriteLine(result.Error);
+```
+
+## PatchResult
+
+<ResponseField name="IsSuccess" type="bool">
+  `true` when all operations applied successfully.
+</ResponseField>
+
+<ResponseField name="Result" type="JsonNode?">
+  The patched document. `null` for a successful `remove` of the root or when `IsSuccess` is `false`.
+</ResponseField>
+
+<ResponseField name="Error" type="string?">
+  A human-readable error message describing the failing operation. `null` when `IsSuccess` is `true`.
+</ResponseField>
+
+## PatchOperation factory methods
+
+`PatchOperation` provides static factories for each RFC 6902 operation type.
+
+```csharp
+// add — inserts or replaces a value
+PatchOperation.Add(JsonPointer.Create("tags", "-"), JsonNode.Parse("""\"new-tag\""""))
+
+// remove — removes a value
+PatchOperation.Remove(JsonPointer.Create("deprecated"))
+
+// replace — replaces an existing value (fails if path does not exist)
+PatchOperation.Replace(JsonPointer.Create("status"), JsonNode.Parse("""\"active\""""))
+
+// move — moves a value from one location to another
+PatchOperation.Move(JsonPointer.Create("old"), JsonPointer.Create("new"))
+
+// copy — copies a value to another location
+PatchOperation.Copy(JsonPointer.Create("source"), JsonPointer.Create("destination"))
+
+// test — asserts that a value equals the given node; fails the whole patch if not
+PatchOperation.Test(JsonPointer.Create("version"), JsonNode.Parse("2"))
+```
+
+## Equality
+
+`JsonPatch` implements `IEquatable<JsonPatch>`. Two patches are equal when their `Operations` sequences are equal (same types, paths, and values in the same order).
+
+## Serialization
+
+`JsonPatch` ships with `PatchJsonConverter` registered via `[JsonConverter]`. Patches serialize to and from the standard RFC 6902 JSON array format.
+
+```csharp
+var json = """
+    [
+      {"op": "replace", "path": "/name", "value": "Alice"},
+      {"op": "add",     "path": "/active", "value": true}
+    ]
+    """;
+
+var patch = JsonSerializer.Deserialize<JsonPatch>(json)!;
+var result = patch.Apply(document);
+```

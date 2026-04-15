@@ -1,0 +1,165 @@
+---
+title: 'Query JSON documents using JsonPath.Net and RFC 9535'
+description: 'Learn how to install JsonPath.Net, parse RFC 9535 path expressions, iterate PathResult matches, use built-in filter functions, and register custom functions.'
+---
+
+JsonPath.Net is a full implementation of [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535.html), the JSON Path specification. It lets you write concise path expressions that select and extract values from a JSON document — similar to what XPath does for XML, but for JSON. A path is parsed once and can be evaluated against any number of documents.
+
+## Installation
+
+```bash
+dotnet add package JsonPath.Net
+```
+
+## Parsing a path
+
+Use `JsonPath.Parse` to parse an expression string. The method throws `PathParseException` if the syntax is invalid. Use `TryParse` when you cannot guarantee the input is valid:
+
+```csharp
+using Json.Path;
+
+// Throwing — use when the path is known at compile time
+var path = JsonPath.Parse("$.prop[0:6:2]");
+
+// Non-throwing — use for user-supplied input
+if (JsonPath.TryParse("$.prop[0:6:2]", out var path))
+{
+    // path is valid
+}
+```
+
+<Note>
+  All RFC 9535 JSON Path expressions must start with `$`, which represents the root of the JSON document. The parser rejects expressions that do not begin with `$` by default.
+</Note>
+
+## Evaluating a path
+
+Call `Evaluate` on a parsed `JsonPath`, passing any `JsonNode`. The return type is `PathResult`, which holds the list of matched nodes:
+
+```csharp
+using System.Text.Json.Nodes;
+using Json.Path;
+
+var path = JsonPath.Parse("$.prop[0:6:2]");
+var instance = JsonNode.Parse("{\"prop\":[0,1,2,3,4,5]}");
+
+var results = path.Evaluate(instance);
+```
+
+## Iterating results
+
+Each item in `results.Matches` exposes a `.Value` (`JsonNode?`) and a `.Location` (`JsonPath`) that identifies exactly where the value lives in the document:
+
+```csharp
+foreach (var match in results.Matches)
+{
+    Console.WriteLine($"Value: {match.Value}  Location: {match.Location}");
+}
+// Value: 0  Location: $['prop'][0]
+// Value: 2  Location: $['prop'][2]
+// Value: 4  Location: $['prop'][4]
+```
+
+## Selector types
+
+A JSON Path expression is composed of one or more selectors that narrow the selected nodes at each step.
+
+| Selector | Syntax | Description |
+|---|---|---|
+| Name | `$.prop` | Selects the child key `prop` from an object |
+| Index | `$[0]` | Selects the element at index `0` from an array |
+| Wildcard | `$.*` | Selects all children of an object or array |
+| Slice | `$[0:5:2]` | Selects every 2nd element from index 0 up to (not including) 5 |
+| Filter | `$[?...]` | Selects elements that satisfy a logical expression |
+
+```csharp
+// Name
+var name = JsonPath.Parse("$.store");
+
+// Index
+var index = JsonPath.Parse("$.items[0]");
+
+// Wildcard — all children
+var wild = JsonPath.Parse("$.items[*]");
+
+// Slice — elements at indices 0, 2, 4
+var slice = JsonPath.Parse("$[0:6:2]");
+
+// Filter — books cheaper than $10
+var filter = JsonPath.Parse("$.store.book[?@.price < 10]");
+```
+
+<Tip>
+  Prefix any segment with `..` for recursive descent, which searches the entire subtree rather than only direct children: `$..name` finds every `name` key anywhere in the document.
+</Tip>
+
+## Built-in functions
+
+RFC 9535 defines five functions available inside filter expressions:
+
+| Function | Return type | Description |
+|---|---|---|
+| `length(value)` | `number` | Character count of a string, or element/property count of an array or object |
+| `count(nodelist)` | `number` | Number of nodes in a nodelist |
+| `match(str, regex)` | `bool` | `true` if the whole string matches the regex (anchored) |
+| `search(str, regex)` | `bool` | `true` if any part of the string matches the regex |
+| `value(nodelist)` | `value` | Returns the single value from a one-node nodelist, or `null` otherwise |
+
+```csharp
+// Books with a title longer than 20 characters
+var longTitles = JsonPath.Parse("$.book[?length(@.title) > 20]");
+
+// Books whose title contains "dragon" anywhere
+var dragon = JsonPath.Parse("$.book[?search(@.title, \"dragon\")]");
+
+// Items whose category is exactly "fiction"
+var fiction = JsonPath.Parse("$.book[?match(@.category, \"fiction\")]");
+```
+
+## Custom functions
+
+Register your own filter functions with `FunctionRepository.Register<T>()`. Functions must be registered before any path that references them is parsed.
+
+<Steps>
+  <Step title="Define the function class">
+    Extend the appropriate base class and implement the `Evaluate` method:
+
+    ```csharp
+    using Json.Path;
+    using System.Text.Json.Nodes;
+
+    public class FirstFunction : ValueFunctionDefinition
+    {
+        public override string Name => "first";
+
+        public JsonNode? Evaluate(NodeList nodes) =>
+            nodes.Count > 0 ? nodes[0].Value : null;
+    }
+    ```
+  </Step>
+
+  <Step title="Register at startup">
+    Call `FunctionRepository.Register()` once during application startup, passing an instance. Use `RegisterValueFunction<T>()` for AOT-compatible registration without an instance:
+
+    ```csharp
+    // Instance-based (recommended for most cases)
+    FunctionRepository.Register(new FirstFunction());
+
+    // Generic — resolves method name via reflection (non-AOT)
+    FunctionRepository.RegisterValueFunction<FirstFunction>();
+    ```
+  </Step>
+
+  <Step title="Use in a path expression">
+    Once registered, the function is available in any filter expression:
+
+    ```csharp
+    var path = JsonPath.Parse("$.items[?first(@.tags) == \"featured\"]");
+    var result = path.Evaluate(document);
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Registration is global. Registering a function with the same name more than once will throw an exception. Register all functions once at startup before parsing any paths.
+</Warning>

@@ -1,97 +1,69 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Json Everything: complete System.Text.Json toolkit for .NET"
+description: "System.Text.Json-based .NET libraries for JSON Schema, JSON Path, JSON Patch, JSON Pointer, JSON Logic, JSON-e, and YAML. Standards-compliant and AOT-ready."
 ---
 
-## Setting up
+Json Everything is a suite of .NET libraries built on top of `System.Text.Json`, providing complete implementations of major JSON standards. Each library is independently installable via NuGet, so you only pull in what you need.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install one or more packages from NuGet in minutes
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Validate JSON, query paths, and apply patches with working examples
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="JSON Schema" icon="shield-check" href="/schema/basics">
+    Full JSON Schema validation for drafts 6, 7, 2019-09, and 2020-12
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api/JsonSchema.Net/JsonSchema">
+    Complete type signatures and method documentation
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Libraries at a glance
 
-Everything you need to create world-class documentation.
+Each library targets .NET Standard 2.0 and .NET 8, and is published independently to NuGet.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="JsonSchema.Net" icon="shield-check" href="/schema/basics">
+    Full JSON Schema validation — drafts 6, 7, 2019-09, 2020-12
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="JsonSchema.Net.Generation" icon="wand-magic-sparkles" href="/schema/schema-generation">
+    Generate schemas from .NET types using attributes
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="JsonSchema.Net.DataGeneration" icon="database" href="/schema/data-generation">
+    Generate random JSON data that conforms to a schema
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="JsonSchema.Net.Api" icon="server" href="/schema/aspnet-integration">
+    ASP.NET Core integration for automatic request body validation
   </Card>
-</Columns>
+  <Card title="JsonPath.Net" icon="magnifying-glass" href="/path/basics">
+    JSON Path querying per RFC 9535 with custom function support
+  </Card>
+  <Card title="JsonPointer.Net" icon="location-crosshairs" href="/pointer/basics">
+    JSON Pointer navigation per RFC 6901 and Relative JSON Pointer
+  </Card>
+  <Card title="JsonPatch.Net" icon="code-merge" href="/patch/basics">
+    JSON Patch application and generation per RFC 6902
+  </Card>
+  <Card title="JsonLogic" icon="filter" href="/logic/basics">
+    JSON Logic rule evaluation with custom operator support
+  </Card>
+  <Card title="JsonE.Net" icon="brackets-curly" href="/json-e/basics">
+    JSON-e template evaluation for parameterized JSON structures
+  </Card>
+  <Card title="Json.More.Net" icon="toolbox" href="/more/json-more">
+    Extensions for deep equality, enum serialization, and AOT support
+  </Card>
+  <Card title="Yaml2JsonNode" icon="file-code" href="/yaml/basics">
+    Convert YAML documents to and from JsonNode
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Standards compliance
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+Every library in this suite targets full compliance with its associated specification. JSON Schema support is independently tested against the [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite) and results are publicly visible on [Bowtie](https://bowtie-json-schema.github.io/bowtie).
+
+<Note>
+  All libraries are MIT-licensed. Organizations generating revenue from this project are asked to pay a monthly maintenance fee via [GitHub Sponsors](https://github.com/sponsors/gregsdennis).
+</Note>

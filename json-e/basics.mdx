@@ -1,0 +1,159 @@
+---
+title: "Parameterize JSON templates with JsonE.Net (JSON-e)"
+description: "Learn how to evaluate JSON-e templates in .NET using the JsonE.Net package, with support for expressions, operators, and dynamic context injection."
+---
+
+The `JsonE.Net` package implements the [JSON-e](https://json-e.js.org/) specification for .NET. JSON-e is a data-structure parameterization system: you embed operators inside a JSON template, supply a context object, and get back a new JSON value with all operators evaluated. Templates are themselves valid JSON, so they are easy to store, transmit, and version-control.
+
+## Installation
+
+```bash
+dotnet add package JsonE.Net
+```
+
+## What is JSON-e?
+
+JSON-e transforms a JSON template by walking the structure and evaluating any recognized operator keys. Non-operator nodes pass through unchanged, so the output closely mirrors the shape of the template. This makes JSON-e well-suited for configuration rendering, task-graph generation, and anywhere you want logic to live in data rather than code.
+
+## Basic usage
+
+<Steps>
+  <Step title="Parse the template and context">
+    Parse your template and context from JSON, or build them as `JsonNode` objects. The context must be a `JsonObject`.
+
+    ```csharp
+    var template = JsonNode.Parse("""{"$eval": "(z / x) ** 2"}""");
+
+    var context = JsonNode.Parse(
+        """{"x": 10, "z": 20, "s": "face", "t": "plant"}"""
+    )!.AsObject();
+    ```
+  </Step>
+  <Step title="Evaluate">
+    Call `JsonE.Evaluate` with the template and context. The return value is `JsonNode?`.
+
+    ```csharp
+    var result = JsonE.Evaluate(template, context);
+    // result: 4
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  The context argument must be a JSON object (`JsonObject`). Passing any other node type will throw a `TemplateException`. Passing `null` is allowed and is treated as an empty object.
+</Note>
+
+## The `$eval` operator
+
+`$eval` evaluates an expression string and replaces the operator node with the result. The expression language supports arithmetic, comparisons, boolean logic, string operations, and property access.
+
+```csharp
+// Template: {"$eval": "(z / x) ** 2"}
+// Context:  {"x": 10, "z": 20}
+// Result:   4
+var template = JsonNode.Parse("""{"$eval": "(z / x) ** 2"}""");
+var context  = JsonNode.Parse("""{"x": 10, "z": 20}""")!.AsObject();
+
+var result = JsonE.Evaluate(template, context);
+// result: 4
+```
+
+## String interpolation
+
+Embed expressions inside strings using `${...}`:
+
+```csharp
+var template = JsonNode.Parse("""{"greeting": "Hello, ${name}!"}""");
+var context  = JsonNode.Parse("""{"name": "world"}""")!.AsObject();
+
+var result = JsonE.Evaluate(template, context);
+// result: {"greeting": "Hello, world!"}
+```
+
+## Operator reference
+
+| Operator        | Description                                                      |
+|-----------------|------------------------------------------------------------------|
+| `$eval`         | Evaluate an expression string                                    |
+| `$json`         | Serialize a value to a JSON string                               |
+| `$if`           | Conditional: `{"$if": expr, "then": ..., "else": ...}`          |
+| `$flatten`      | Flatten one level of nesting in an array                         |
+| `$flattenDeep`  | Recursively flatten all nested arrays                            |
+| `$fromNow`      | Produce a timestamp offset from now (e.g. `"1 hour"`)           |
+| `$let`          | Introduce local variables: `{"$let": {...}, "in": ...}`          |
+| `$map`          | Transform each element: `{"$map": arr, "each(x)": ...}`         |
+| `$merge`        | Shallow-merge an array of objects into one object                |
+| `$reverse`      | Reverse an array                                                 |
+| `$sort`         | Sort an array, with optional `"by(x)"` key expression           |
+| `$switch`       | Multi-branch conditional keyed by expression result              |
+
+### `$if`
+
+```csharp
+var template = JsonNode.Parse(
+    """
+    {
+      "$if": "x > 5",
+      "then": "big",
+      "else": "small"
+    }
+    """
+);
+var context = JsonNode.Parse("""{"x": 10}""")!.AsObject();
+
+var result = JsonE.Evaluate(template, context);
+// result: "big"
+```
+
+### `$let`
+
+```csharp
+var template = JsonNode.Parse(
+    """
+    {
+      "$let": { "double": {"$eval": "x * 2"} },
+      "in":   {"$eval": "double + 1"}
+    }
+    """
+);
+var context = JsonNode.Parse("""{"x": 3}""")!.AsObject();
+
+var result = JsonE.Evaluate(template, context);
+// result: 7
+```
+
+### `$map`
+
+```csharp
+var template = JsonNode.Parse(
+    """
+    {
+      "$map": [1, 2, 3],
+      "each(n)": {"$eval": "n * n"}
+    }
+    """
+);
+
+var result = JsonE.Evaluate(template, null);
+// result: [1, 4, 9]
+```
+
+### `$sort`
+
+```csharp
+var template = JsonNode.Parse(
+    """
+    {
+      "$sort": [{"x": 3}, {"x": 1}, {"x": 2}],
+      "by(item)": {"$eval": "item.x"}
+    }
+    """
+);
+
+var result = JsonE.Evaluate(template, null);
+// result: [{"x": 1}, {"x": 2}, {"x": 3}]
+```
+
+<Tip>
+  Prefix an object key with `$$` to escape it from operator detection. The leading `$` is stripped from the output, so `$$if` becomes `$if` in the result.
+</Tip>

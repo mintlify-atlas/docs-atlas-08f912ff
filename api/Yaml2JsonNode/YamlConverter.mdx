@@ -1,0 +1,190 @@
+---
+title: 'YamlConverter class — Yaml2JsonNode conversion API reference'
+description: 'API reference for YamlConverter in Yaml2JsonNode. Convert YamlDotNet models to JsonNode or JsonElement and convert JsonNode back to YamlNode.'
+---
+
+`YamlConverter` is a static class in the `Yaml2JsonNode` namespace that bridges [YamlDotNet](https://github.com/aaubry/YamlDotNet)'s representation model and `System.Text.Json`'s `JsonNode` / `JsonElement` types. All methods are extension methods on YamlDotNet or `JsonNode` types.
+
+Install the NuGet package to use this functionality:
+
+```bash
+dotnet add package Yaml2JsonNode
+```
+
+## YAML to JsonNode
+
+### ToJsonNode (YamlStream)
+
+Converts all documents in a YAML stream to a sequence of `JsonNode` values.
+
+```csharp
+public static IEnumerable<JsonNode?> ToJsonNode(this YamlStream yaml)
+```
+
+<ParamField body="yaml" type="YamlStream" required>
+  A YamlDotNet `YamlStream` that may contain one or more documents.
+</ParamField>
+
+<ResponseField name="returns" type="IEnumerable&lt;JsonNode?&gt;">
+  One `JsonNode?` per document in the stream. Documents that represent YAML `null` produce a `null` element.
+</ResponseField>
+
+```csharp
+using Yaml2JsonNode;
+using YamlDotNet.RepresentationModel;
+
+var yaml = """
+    name: Alice
+    age: 30
+    ---
+    name: Bob
+    age: 25
+    """;
+
+var stream = new YamlStream();
+stream.Load(new StringReader(yaml));
+
+foreach (var node in stream.ToJsonNode())
+    Console.WriteLine(node); // {"name":"Alice","age":30}  then  {"name":"Bob","age":25}
+```
+
+---
+
+### ToJsonNode (YamlDocument)
+
+Converts a single YAML document to a `JsonNode`.
+
+```csharp
+public static JsonNode? ToJsonNode(this YamlDocument yaml)
+```
+
+<ParamField body="yaml" type="YamlDocument" required>
+  A YamlDotNet `YamlDocument`.
+</ParamField>
+
+<ResponseField name="returns" type="JsonNode?">
+  A `JsonNode?` representation of the document root.
+</ResponseField>
+
+---
+
+### ToJsonNode (YamlNode)
+
+Converts a single YAML node to a `JsonNode`. Supports mappings, sequences, and scalars.
+
+```csharp
+public static JsonNode? ToJsonNode(this YamlNode yaml)
+```
+
+<ParamField body="yaml" type="YamlNode" required>
+  A `YamlMappingNode`, `YamlSequenceNode`, or `YamlScalarNode`.
+</ParamField>
+
+<ResponseField name="returns" type="JsonNode?">
+  The equivalent `JsonObject`, `JsonArray`, or `JsonValue`. Returns `null` for YAML null scalars (`~`, `null`, `Null`, `NULL`, or empty plain scalar).
+</ResponseField>
+
+```csharp
+var stream = new YamlStream();
+stream.Load(new StringReader("items: [1, 2, 3]"));
+var node = stream.Documents[0].RootNode.ToJsonNode();
+Console.WriteLine(node); // {"items":[1,2,3]}
+```
+
+## YAML to JsonElement
+
+### ToJsonElement (YamlStream)
+
+Converts all documents in a YAML stream to `JsonElement` values.
+
+```csharp
+public static IEnumerable<JsonElement> ToJsonElement(this YamlStream yaml)
+```
+
+<ParamField body="yaml" type="YamlStream" required>
+  The YAML stream to convert.
+</ParamField>
+
+<ResponseField name="returns" type="IEnumerable&lt;JsonElement&gt;">
+  A sequence of `JsonElement` values, one per document.
+</ResponseField>
+
+---
+
+### ToJsonElement (YamlDocument)
+
+Converts a single YAML document to a `JsonElement`.
+
+```csharp
+public static JsonElement ToJsonElement(this YamlDocument yaml)
+```
+
+<ResponseField name="returns" type="JsonElement">
+  A cloned `JsonElement` representing the document.
+</ResponseField>
+
+---
+
+### ToJsonElement (YamlNode)
+
+Converts a single YAML node to a `JsonElement`.
+
+```csharp
+public static JsonElement ToJsonElement(this YamlNode yaml)
+```
+
+<ResponseField name="returns" type="JsonElement">
+  A cloned `JsonElement` representation of the node.
+</ResponseField>
+
+## JSON to YAML
+
+### ToYamlNode
+
+Converts a `JsonNode` back to a YamlDotNet `YamlNode`.
+
+```csharp
+public static YamlNode ToYamlNode(this JsonNode json)
+```
+
+<ParamField body="json" type="JsonNode" required>
+  The JSON node to convert. `JsonObject` becomes `YamlMappingNode`, `JsonArray` becomes `YamlSequenceNode`, and `JsonValue` becomes `YamlScalarNode`.
+</ParamField>
+
+<ResponseField name="returns" type="YamlNode">
+  The equivalent YamlDotNet node.
+</ResponseField>
+
+```csharp
+var json = JsonNode.Parse("""{"name": "Alice", "scores": [95, 87, 92]}""")!;
+var yaml = json.ToYamlNode();
+
+var doc    = new YamlDocument(yaml);
+var stream = new YamlStream(doc);
+
+using var writer = new StringWriter();
+stream.Save(writer, assignAnchors: false);
+Console.WriteLine(writer);
+// name: Alice
+// scores:
+// - 95
+// - 87
+// - 92
+```
+
+## Scalar type mapping
+
+Plain YAML scalars are mapped to JSON types according to the following rules:
+
+| YAML value | JSON type |
+|---|---|
+| `true` / `false` | `boolean` |
+| numeric literal | `number` (stored as `decimal`) |
+| `~`, `null`, `Null`, `NULL`, `""` (plain) | `null` |
+| all other strings | `string` |
+
+Quoted scalars (single-quoted, double-quoted, literal block `|`, folded `>`) are always mapped to `string` regardless of their content.
+
+## Error handling
+
+`ToJsonNode(YamlNode)` and `ToYamlNode(JsonNode)` throw `NotSupportedException` for YAML node types that have no JSON equivalent (e.g., YAML aliases without resolution) or `JsonNode` subtypes that are unrecognised.

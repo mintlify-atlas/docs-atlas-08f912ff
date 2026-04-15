@@ -1,0 +1,150 @@
+---
+title: 'JsonLogic class — rule evaluation and factory API reference'
+description: 'API reference for the JsonLogic static class. Apply JsonLogic rules to JSON data and build rule trees with factory methods for all standard operators.'
+---
+
+`JsonLogic` is a static class that provides two capabilities: applying a JsonLogic rule encoded as a `JsonNode` to some context data, and a set of factory methods that build strongly-typed `Rule` objects for every standard JsonLogic operator.
+
+## Applying rules
+
+### Apply (from JsonNode)
+
+Applies a rule to context data. Both arguments may come from any JSON source.
+
+```csharp
+public static JsonNode? Apply(JsonNode? rule, JsonNode? context = null)
+```
+
+<ParamField body="rule" type="JsonNode?" required>
+  A `JsonNode` encoding a JsonLogic rule. Single-key objects are interpreted as operations; arrays and primitive values are treated as literals.
+</ParamField>
+
+<ParamField body="context" type="JsonNode?">
+  The data the rule operates on. Accessible inside rules via `var`.
+</ParamField>
+
+<ResponseField name="returns" type="JsonNode?">
+  The result of applying the rule, or the rule itself if it has no matching handler.
+</ResponseField>
+
+```csharp
+using Json.Logic;
+
+var rule    = JsonNode.Parse("""{">":[{"var":"age"},17]}""");
+var context = JsonNode.Parse("""{"age":21}""");
+
+var result = JsonLogic.Apply(rule, context);
+Console.WriteLine(result?.GetValue<bool>()); // true
+```
+
+---
+
+### Apply (from EvaluationContext)
+
+Applies a rule within an existing `EvaluationContext`. Intended for use inside custom `IRule` implementations.
+
+```csharp
+public static JsonNode? Apply(JsonNode? rule, EvaluationContext context)
+```
+
+## Rule factory methods
+
+All factory methods return a `Rule` instance. `Rule` objects serialize to their JsonLogic JSON representation.
+
+### Logic
+
+```csharp
+JsonLogic.And(Rule a, params Rule[] more)   // {"and":[...]}
+JsonLogic.Or(Rule a, params Rule[] more)    // {"or":[...]}
+JsonLogic.Not(Rule value)                   // {"!":[...]}
+JsonLogic.BoolCast(Rule value)              // {"!!":[...]}
+JsonLogic.If(params Rule[] components)      // {"if":[condition,then,else,...]}
+```
+
+### Arithmetic
+
+```csharp
+JsonLogic.Add(Rule a, params Rule[] more)       // {"+": [...]}
+JsonLogic.Subtract(Rule a, params Rule[] more)  // {"-": [...]}
+JsonLogic.Multiply(Rule a, params Rule[] more)  // {"*": [...]}
+JsonLogic.Divide(Rule a, Rule b)                // {"/": [a, b]}
+JsonLogic.Modulus(Rule a, Rule b)               // {"%": [a, b]}
+JsonLogic.Max(Rule a, params Rule[] more)       // {"max": [...]}
+JsonLogic.Min(Rule a, params Rule[] more)       // {"min": [...]}
+```
+
+### Comparison
+
+```csharp
+JsonLogic.StrictEquals(Rule a, Rule b)        // {"===": [a, b]}
+JsonLogic.StrictNotEquals(Rule a, Rule b)     // {"!==": [a, b]}
+JsonLogic.LooseEquals(Rule a, Rule b)         // {"==": [a, b]}
+JsonLogic.LooseNotEquals(Rule a, Rule b)      // {"!=": [a, b]}
+JsonLogic.LessThan(Rule a, Rule b)            // {"<": [a, b]}
+JsonLogic.LessThanOrEqual(Rule a, Rule b)     // {"<=": [a, b]}
+JsonLogic.MoreThan(Rule a, Rule b)            // {">": [a, b]}
+JsonLogic.MoreThanOrEqual(Rule a, Rule b)     // {">=": [a, b]}
+JsonLogic.BetweenExclusive(Rule a, Rule b, Rule c) // {"<":  [a, b, c]}
+JsonLogic.BetweenInclusive(Rule a, Rule b, Rule c) // {"<=": [a, b, c]}
+```
+
+### String
+
+```csharp
+JsonLogic.Cat(Rule a, params Rule[] more)            // {"cat": [...]}
+JsonLogic.Substr(Rule input, Rule start)             // {"substr": [input, start]}
+JsonLogic.Substr(Rule input, Rule start, Rule count) // {"substr": [input, start, count]}
+```
+
+### Array operations
+
+```csharp
+JsonLogic.All(Rule input, Rule predicate)     // {"all":    [input, predicate]}
+JsonLogic.Some(Rule input, Rule predicate)    // {"some":   [input, predicate]}
+JsonLogic.None(Rule input, Rule predicate)    // {"none":   [input, predicate]}
+JsonLogic.Map(Rule input, Rule transform)     // {"map":    [input, transform]}
+JsonLogic.Filter(Rule input, Rule predicate)  // {"filter": [input, predicate]}
+JsonLogic.Reduce(Rule input, Rule fn, Rule initial) // {"reduce": [input, fn, initial]}
+JsonLogic.Merge(params Rule[] items)          // {"merge": [...]}
+JsonLogic.In(Rule test, Rule input)           // {"in": [test, input]}
+```
+
+### Data access
+
+```csharp
+JsonLogic.Variable(string path)                       // {"var": "path.to.value"}
+JsonLogic.Variable(string path, Rule defaultValue)    // {"var": ["path", default]}
+JsonLogic.Variable(Rule input)                        // {"var": rule}
+JsonLogic.Variable(Rule input, Rule defaultValue)
+
+JsonLogic.Missing(params Rule[] components)           // {"missing": [...]}
+JsonLogic.MissingSome(Rule requiredCount, Rule components) // {"missing_some": [n, [...]]}
+```
+
+### Utilities
+
+```csharp
+JsonLogic.Literal(JsonNode? value) // wraps a literal JSON value — no operation applied
+JsonLogic.Log(Rule log)            // {"log": rule} — no-op that logs and passes through the result
+```
+
+## Complete example
+
+```csharp
+using Json.Logic;
+
+// Build a rule: user must be 18+ and have a verified email
+var rule = JsonLogic.And(
+    JsonLogic.MoreThanOrEqual(
+        JsonLogic.Variable("age"),
+        JsonLogic.Literal(JsonValue.Create(18))),
+    JsonLogic.StrictEquals(
+        JsonLogic.Variable("emailVerified"),
+        JsonLogic.Literal(JsonValue.Create(true)))
+);
+
+var context = JsonNode.Parse("""{"age": 22, "emailVerified": true}""");
+var result  = JsonLogic.Apply(JsonSerializer.SerializeToNode(rule), context);
+
+Console.WriteLine(result?.GetValue<bool>()); // true
+```

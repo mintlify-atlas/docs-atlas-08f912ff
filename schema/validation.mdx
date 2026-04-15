@@ -1,0 +1,192 @@
+---
+title: "Configuring JSON Schema evaluation and output options"
+description: "Control output format, format validation, annotation collection, error localization, and more using EvaluationOptions in JsonSchema.Net."
+---
+
+`EvaluationOptions` is the central configuration object for a schema evaluation run. Pass an instance as the second argument to `JsonSchema.Evaluate` to override the library defaults. When no options are supplied, `EvaluationOptions.Default` is used.
+
+```csharp
+var options = new EvaluationOptions
+{
+    OutputFormat            = OutputFormat.List,
+    RequireFormatValidation = true,
+    PreserveDroppedAnnotations = false,
+};
+
+var results = schema.Evaluate(instance, options);
+```
+
+To start from an existing configuration and adjust individual properties, use `EvaluationOptions.From`:
+
+```csharp
+var options = EvaluationOptions.From(EvaluationOptions.Default);
+options.OutputFormat = OutputFormat.Flag;
+```
+
+## Options reference
+
+<ParamField body="OutputFormat" type="OutputFormat" default="Hierarchical">
+  Controls the shape of the returned `EvaluationResults` tree. See [Output formats](#output-formats) below.
+</ParamField>
+
+<ParamField body="RequireFormatValidation" type="bool" default="false">
+  When `true`, the `format` keyword is treated as an assertion keyword and produces errors for unrecognised or invalid formats. When `false` (the default), `format` only produces annotations for drafts 2019-09 and earlier, and follows the `$vocabulary` declaration in the meta-schema for draft 2020-12.
+</ParamField>
+
+<ParamField body="PreserveDroppedAnnotations" type="bool" default="false">
+  When `true`, annotations that were collected by a subschema that ultimately failed are included in the output under a `droppedAnnotations` property. Useful for debugging complex schemas.
+</ParamField>
+
+<ParamField body="AddAnnotationForUnknownKeywords" type="bool" default="false">
+  When `true`, an annotation is emitted for every keyword the library does not recognise. This helps catch typos in keyword names during development.
+</ParamField>
+
+<ParamField body="Culture" type="CultureInfo?" default="null">
+  Overrides the culture used to produce error messages. When `null`, the value of `ErrorMessages.Culture` is used, which defaults to the current thread culture. See [Error message localization](#error-message-localization).
+</ParamField>
+
+<ParamField body="FormatRegistry" type="FormatRegistry" default="FormatRegistry.Global">
+  A local format registry for this options instance. The library first checks this registry, then falls back to `FormatRegistry.Global`. Allows per-evaluation or per-options custom format validators without affecting the global state.
+</ParamField>
+
+## Output formats
+
+The `OutputFormat` enum has three members.
+
+### `OutputFormat.Flag`
+
+Returns a single root `EvaluationResults` node. All `Details`, `Annotations`, and `Errors` collections are cleared before the result is returned. This is the fastest mode because the library short-circuits as soon as it finds the first failing keyword.
+
+Use this in production hot paths where you only need a pass/fail decision:
+
+```csharp
+var options = new EvaluationOptions { OutputFormat = OutputFormat.Flag };
+var results = schema.Evaluate(instance, options);
+bool isValid = results.IsValid;
+```
+
+### `OutputFormat.List`
+
+All result nodes from every level of the schema hierarchy are flattened into a single list under `results.Details`. Each item retains its own `EvaluationPath`, `InstanceLocation`, `Annotations`, and `Errors`. The `Details` collections of the child nodes are cleared.
+
+Use this when you want to iterate over all errors or annotations in one pass:
+
+```csharp
+var options = new EvaluationOptions { OutputFormat = OutputFormat.List };
+var results = schema.Evaluate(instance, options);
+
+foreach (var node in results.Details ?? [])
+{
+    if (!node.IsValid && node.Errors is not null)
+    {
+        foreach (var (keyword, message) in node.Errors)
+            Console.WriteLine($"{node.InstanceLocation} [{keyword}]: {message}");
+    }
+}
+```
+
+### `OutputFormat.Hierarchical`
+
+Result nodes mirror the nesting structure of the schema. Each applicator keyword (`allOf`, `if`/`then`/`else`, `properties`, etc.) produces a parent node whose `Details` list contains the results of its subschemas. This is the default format and the most information-rich.
+
+Use this when you need to understand which part of the schema triggered a failure, or when producing structured validation reports:
+
+```csharp
+var options = new EvaluationOptions { OutputFormat = OutputFormat.Hierarchical };
+var results = schema.Evaluate(instance, options);
+
+void PrintResults(EvaluationResults node, int depth = 0)
+{
+    var indent = new string(' ', depth * 2);
+    Console.WriteLine($"{indent}{node.InstanceLocation}: {(node.IsValid ? "valid" : "invalid")}");
+    foreach (var child in node.Details ?? [])
+        PrintResults(child, depth + 1);
+}
+
+PrintResults(results);
+```
+
+## Working with EvaluationResults
+
+`EvaluationResults` is returned from every `Evaluate` call. Its key members are:
+
+| Member | Type | Description |
+|---|---|---|
+| `IsValid` | `bool` | `true` if the instance passed all evaluated keywords. |
+| `EvaluationPath` | `JsonPointer` | The JSON Pointer path through the schema that produced this node. |
+| `InstanceLocation` | `JsonPointer` | The location in the instance that this result applies to. |
+| `SchemaLocation` | `Uri` | The absolute URI of the schema location, including the fragment. |
+| `Annotations` | `Dictionary<string, JsonElement>?` | Keyword annotations collected by passing subschemas. `null` when no annotations were produced. |
+| `Errors` | `Dictionary<string, string>?` | Keyword error messages from failing keywords. `null` on a passing node. |
+| `Details` | `List<EvaluationResults>?` | Nested results for `Hierarchical` and `List` formats. `null` when no children exist. |
+| `Parent` | `EvaluationResults?` | Reference to the parent node. Set only in `List` format. |
+
+### Checking for errors
+
+```csharp
+var results = schema.Evaluate(instance);
+
+if (!results.IsValid)
+{
+    // For Hierarchical format, recursively walk Details
+    // For List format, iterate results.Details directly
+    foreach (var detail in results.Details ?? [])
+    {
+        if (!detail.IsValid && detail.Errors is not null)
+        {
+            foreach (var (keyword, message) in detail.Errors)
+                Console.WriteLine($"At {detail.InstanceLocation}: [{keyword}] {message}");
+        }
+    }
+}
+```
+
+### Reading annotations
+
+Annotations are attached to passing nodes and carry metadata emitted by keywords like `title`, `description`, `default`, `examples`, and `readOnly`:
+
+```csharp
+var results = schema.Evaluate(instance);
+
+foreach (var detail in results.Details ?? [])
+{
+    if (detail.IsValid && detail.Annotations is not null)
+    {
+        foreach (var (keyword, value) in detail.Annotations)
+            Console.WriteLine($"{detail.InstanceLocation} / {keyword}: {value}");
+    }
+}
+```
+
+## Error message localization
+
+The library ships with translations for error messages in several languages. Set the culture either globally or per evaluation:
+
+```csharp
+// Globally, for all evaluations on the current thread
+ErrorMessages.Culture = new CultureInfo("es");
+
+// Per evaluation, overrides the global setting
+var options = new EvaluationOptions
+{
+    Culture = new CultureInfo("pt-BR")
+};
+```
+
+The following languages are included out of the box:
+
+| Culture code | Language |
+|---|---|
+| `it` | Italian |
+| `pl` | Polish |
+| `pt` / `pt-BR` | Portuguese |
+| `ru` | Russian |
+| `es` | Spanish |
+| `sv` | Swedish |
+| `tr` | Turkish |
+
+When no matching translation is found, messages fall back to English.
+
+<Note>
+  Pull requests adding or improving translations are welcome on the [json-everything GitHub repository](https://github.com/json-everything/json-everything).
+</Note>

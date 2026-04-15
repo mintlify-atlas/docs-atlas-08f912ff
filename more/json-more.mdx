@@ -1,0 +1,149 @@
+---
+title: "Extend System.Text.Json with Json.More.Net utilities"
+description: "Json.More.Net extends System.Text.Json with deep equality, enum serialization, AOT-compatible converters, and useful JsonNode extension methods."
+---
+
+`Json.More.Net` fills gaps in the `System.Text.Json` namespace that appear frequently when working with `JsonNode` and `JsonElement`. It provides deep equality comparisons that correctly handle numeric types, a full-featured enum converter with `[Flags]` support, and a set of convenience extension methods for navigating and transforming JSON nodes.
+
+## Installation
+
+```bash
+dotnet add package Json.More.Net
+```
+
+## Deep equality
+
+`System.Text.Json` ships `JsonNode.DeepEquals`, but it has [known issues with `decimal` comparisons](https://github.com/dotnet/runtime/issues/97490). `Json.More.Net` provides an alternative that works correctly across all numeric kinds.
+
+### `IsEquivalentTo`
+
+Extension method on `JsonNode?`. Returns `true` when two nodes represent the same JSON value.
+
+```csharp
+JsonNode? a = JsonNode.Parse("""{"x": 1, "y": 2}""");
+JsonNode? b = JsonNode.Parse("""{"y": 2, "x": 1}""");
+
+bool equal = a.IsEquivalentTo(b);
+// equal: true  (property order is ignored for objects)
+```
+
+### `GetEquivalenceHashCode`
+
+Produces a consistent hash code derived from the JSON value rather than object identity. Use this when storing `JsonNode` instances in a `HashSet` or as dictionary keys.
+
+```csharp
+var hash = node.GetEquivalenceHashCode();
+
+// Limit depth for large structures:
+var shallowHash = node.GetEquivalenceHashCode(maxHashDepth: 2);
+```
+
+### Equality comparers
+
+| Type | Compares |
+|------|----------|
+| `JsonNodeEqualityComparer` | `JsonNode?` values using `IsEquivalentTo` |
+| `JsonElementEqualityComparer` | `JsonElement` values |
+
+```csharp
+var set = new HashSet<JsonNode?>(JsonNodeEqualityComparer.Instance);
+set.Add(JsonNode.Parse("""{"a": 1}"""));
+set.Add(JsonNode.Parse("""{"a": 1}"""));
+// set.Count == 1
+```
+
+## Extension methods on `JsonNode`
+
+### `AsJsonString`
+
+Serializes a node to a JSON string, returning `"null"` for `null` instead of throwing.
+
+```csharp
+JsonNode? node = null;
+string s = node.AsJsonString();
+// s: "null"
+```
+
+### `ToJsonArray`
+
+Converts any `IEnumerable<JsonNode?>` into a `JsonArray`, deep-cloning each element so nodes can safely belong to multiple trees.
+
+```csharp
+IEnumerable<JsonNode?> items = new[] { JsonValue.Create(1), JsonValue.Create(2) };
+JsonArray array = items.ToJsonArray();
+```
+
+### `GetPathFromRoot`
+
+Returns a JSON Path string that locates the node within its parent tree.
+
+```csharp
+var root = JsonNode.Parse("""{"users": [{"name": "Alice"}]}""")!;
+var name = root["users"]![0]!["name"]!;
+
+string path = name.GetPathFromRoot();
+// path: "$['users'][0]['name']"
+
+string shorthand = name.GetPathFromRoot(useShorthand: true);
+// shorthand: "$.users[0].name"
+```
+
+### `GetPointerFromRoot`
+
+Returns a JSON Pointer (RFC 6901) string for the node's location.
+
+```csharp
+string pointer = name.GetPointerFromRoot();
+// pointer: "/users/0/name"
+```
+
+## Extension methods on `JsonValue`
+
+These helpers handle the ambiguity between `JsonValue` backed by a raw CLR value and one backed by a `JsonElement`.
+
+| Method | Returns |
+|--------|---------|
+| `GetNumber()` | `decimal?` — the numeric value, or `null` |
+| `GetInteger()` | `long?` — the value if it is a whole number, or `null` |
+| `GetString()` | `string?` — the string value, or `null` |
+| `GetBool()` | `bool?` — the boolean value, or `null` |
+
+```csharp
+JsonValue val = JsonValue.Create(42);
+
+decimal? number  = val.GetNumber();   // 42
+long?    integer = val.GetInteger();  // 42
+string?  str     = val.GetString();   // null
+bool?    flag    = val.GetBool();     // null
+```
+
+### `TryGetValue` on `JsonObject`
+
+A safer wrapper around `JsonObject.TryGetPropertyValue` that catches the `ArgumentException` thrown when JSON was parsed from data with duplicate keys.
+
+```csharp
+bool found = obj.TryGetValue("key", out JsonNode? node, out Exception? ex);
+```
+
+## Enum serialization
+
+`EnumStringConverter<T>` serializes and deserializes enums as their string names rather than integer values, with optional `[Flags]` support.
+
+```csharp
+var options = new JsonSerializerOptions();
+options.Converters.Add(new EnumStringConverter<DayOfWeek>());
+
+string json   = JsonSerializer.Serialize(DayOfWeek.Monday, options);
+// json: "Monday"
+
+DayOfWeek day = JsonSerializer.Deserialize<DayOfWeek>(json, options);
+// day: DayOfWeek.Monday
+```
+
+## AOT support
+
+`Json.More.Net` is designed to work with Native AOT. `WeaklyTypedJsonConverter` provides a base class for converters that need to serialize values without knowing the concrete type at compile time, which is required when registering custom rules with `RuleRegistry.AddRule<T>(JsonSerializerContext)` in the `JsonLogic` package.
+
+<Tip>
+  When targeting Native AOT, ensure you provide a `JsonSerializerContext` that includes your types and that your custom converters implement or extend `WeaklyTypedJsonConverter` (or `IWeaklyTypedJsonConverter`).
+</Tip>

@@ -1,0 +1,232 @@
+---
+title: 'JsonPointer struct — JsonPointer.Net API reference'
+description: 'API reference for the JsonPointer struct in JsonPointer.Net. Parse, create, and navigate RFC 6901 JSON Pointer values with minimal allocations.'
+---
+
+`JsonPointer` is a `readonly struct` that represents a JSON Pointer as defined in RFC 6901. The implementation is allocation-optimised: small operations use stack-allocated buffers and `ArrayPool` is used for larger ones. Use JSON Pointer to reference a specific location within a JSON document.
+
+## Static fields
+
+<ResponseField name="Empty" type="JsonPointer">
+  The empty JSON Pointer, equivalent to the string `""`. It refers to the root of a document.
+</ResponseField>
+
+## Properties
+
+<ResponseField name="SegmentCount" type="int">
+  The number of reference tokens (segments) in the pointer. `Empty` has `SegmentCount == 0`.
+</ResponseField>
+
+## Indexer
+
+```csharp
+public JsonPointerSegment this[int index] { get; }
+```
+
+Returns the segment at the given zero-based `index`. Throws `ArgumentOutOfRangeException` when out of bounds.
+
+## Static factory methods
+
+### Create
+
+Builds a `JsonPointer` from one or more segment values.
+
+```csharp
+public static JsonPointer Create(params SegmentValueStandIn[] segments)
+```
+
+<ParamField body="segments" type="SegmentValueStandIn[]" required>
+  One or more segment values. Each value is automatically RFC 6901–encoded (replacing `~` with `~0` and `/` with `~1`).
+</ParamField>
+
+<ResponseField name="returns" type="JsonPointer">
+  A new `JsonPointer`. Returns `Empty` when `segments` is empty.
+</ResponseField>
+
+```csharp
+var pointer = JsonPointer.Create("store", "book", "0", "title");
+Console.WriteLine(pointer); // /store/book/0/title
+```
+
+---
+
+### Parse
+
+Parses a JSON Pointer from a `ReadOnlySpan<char>`.
+
+```csharp
+public static JsonPointer Parse(ReadOnlySpan<char> source)
+```
+
+<ParamField body="source" type="ReadOnlySpan&lt;char&gt;" required>
+  A valid RFC 6901 JSON Pointer string such as `/foo/bar/0`.
+</ParamField>
+
+<ResponseField name="returns" type="JsonPointer">
+  The parsed pointer.
+</ResponseField>
+
+---
+
+### TryParse
+
+Attempts to parse a JSON Pointer string without throwing.
+
+```csharp
+public static bool TryParse(ReadOnlySpan<char> source, out JsonPointer pointer)
+```
+
+<ResponseField name="returns" type="bool">
+  `true` on success; `false` if the string is not a valid JSON Pointer.
+</ResponseField>
+
+## Instance methods
+
+### Combine (pointer)
+
+Appends another `JsonPointer` to this one.
+
+```csharp
+public JsonPointer Combine(JsonPointer other)
+```
+
+<ParamField body="other" type="JsonPointer" required>
+  The pointer to concatenate. Returns `this` when `other` is empty, and `other` when this is empty.
+</ParamField>
+
+<ResponseField name="returns" type="JsonPointer">
+  A new `JsonPointer` representing the concatenation.
+</ResponseField>
+
+---
+
+### Combine (segments)
+
+Appends additional segments to this pointer.
+
+```csharp
+public JsonPointer Combine(params SegmentValueStandIn[] segments)
+```
+
+<ParamField body="segments" type="SegmentValueStandIn[]" required>
+  One or more segment values to append.
+</ParamField>
+
+<ResponseField name="returns" type="JsonPointer">
+  A new `JsonPointer`. Returns `this` when `segments` is empty.
+</ResponseField>
+
+```csharp
+var base_ = JsonPointer.Create("properties");
+var full   = base_.Combine("address", "city");
+Console.WriteLine(full); // /properties/address/city
+```
+
+---
+
+### GetParent
+
+Returns the pointer with the last `levels` segments removed.
+
+```csharp
+public JsonPointer? GetParent(int levels = 1)
+```
+
+<ParamField body="levels" type="int" default="1">
+  The number of ancestor levels to ascend. Must be non-negative.
+</ParamField>
+
+<ResponseField name="returns" type="JsonPointer?">
+  The parent pointer, `Empty` if ascending to the root, or `null` if `levels` exceeds `SegmentCount`.
+</ResponseField>
+
+```csharp
+var p = JsonPointer.Create("a", "b", "c");
+Console.WriteLine(p.GetParent());   // /a/b
+Console.WriteLine(p.GetParent(2));  // /a
+```
+
+---
+
+### GetLocal
+
+Returns a new pointer containing only the last `levels` segments.
+
+```csharp
+public JsonPointer GetLocal(int levels = 1)
+```
+
+<ParamField body="levels" type="int" default="1">
+  The number of trailing segments to retain. Must be between 0 and `SegmentCount` inclusive.
+</ParamField>
+
+<ResponseField name="returns" type="JsonPointer">
+  A new pointer with the specified trailing segments.
+</ResponseField>
+
+---
+
+### GetSegment / TryGetSegment
+
+```csharp
+public JsonPointerSegment GetSegment(int index)
+public bool TryGetSegment(int index, out JsonPointerSegment segment)
+```
+
+`GetSegment` retrieves the segment at `index`, throwing `ArgumentOutOfRangeException` when out of bounds. `TryGetSegment` returns `false` instead of throwing.
+
+---
+
+### StartsWith / EndsWith
+
+```csharp
+public bool StartsWith(JsonPointer other)
+public bool EndsWith(JsonPointer other)
+```
+
+Returns `true` when this pointer begins or ends with the given pointer. The empty pointer is considered a prefix/suffix of every pointer.
+
+---
+
+### Evaluate
+
+Evaluates this pointer against a `JsonElement`, returning the value it points to.
+
+```csharp
+public JsonElement? Evaluate(JsonElement root)
+```
+
+<ParamField body="root" type="JsonElement" required>
+  The root `JsonElement` to evaluate against.
+</ParamField>
+
+<ResponseField name="returns" type="JsonElement?">
+  The element at the pointer location, or `null` when the path does not exist.
+</ResponseField>
+
+```csharp
+var doc = JsonDocument.Parse("""{"user":{"name":"Alice"}}""");
+var pointer = JsonPointer.Create("user", "name");
+var value = pointer.Evaluate(doc.RootElement);
+Console.WriteLine(value?.GetString()); // Alice
+```
+
+---
+
+### ToString
+
+Returns the RFC 6901 string representation of the pointer.
+
+```csharp
+public override string ToString()
+```
+
+## Serialization
+
+`JsonPointer` is decorated with `[JsonConverter(typeof(JsonPointerJsonConverter))]` and `[TypeConverter(typeof(JsonPointerTypeConverter))]` for transparent use with `System.Text.Json` and in data-binding scenarios.
+
+```csharp
+var pointer = JsonPointer.Create("foo", "bar");
+var json = JsonSerializer.Serialize(pointer);         // "/foo/bar"
+var parsed = JsonSerializer.Deserialize<JsonPointer>(json);
+```

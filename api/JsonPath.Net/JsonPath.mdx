@@ -1,0 +1,189 @@
+---
+title: 'JsonPath class — JsonPath.Net path parsing API reference'
+description: 'API reference for the JsonPath class in JsonPath.Net. Parse RFC 9535 JSON Path expressions and evaluate them against JsonNode instances.'
+---
+
+`JsonPath` represents a parsed JSON Path expression as defined in RFC 9535. It supports both global (`$`) and relative (`@`) path scopes, exposes the path's segments for inspection, and evaluates against `JsonNode` instances to produce a `PathResult` containing all matched nodes.
+
+## Static properties
+
+<ResponseField name="Root" type="JsonPath">
+  A pre-built `JsonPath` representing the root selector `$` with no additional segments.
+</ResponseField>
+
+## Instance properties
+
+<ResponseField name="Scope" type="PathScope">
+  Whether the path is rooted at the document root (`Global` / `$`) or at the current node (`Local` / `@`).
+</ResponseField>
+
+<ResponseField name="Segments" type="PathSegment[]">
+  The ordered array of path segments. Each segment holds one or more selectors (name, index, wildcard, filter, etc.).
+</ResponseField>
+
+<ResponseField name="IsSingular" type="bool">
+  `true` when the path can match at most one node. A singular path contains only non-recursive segments each holding a single name or index selector — for example, `$['foo'][1]` or `$.foo[1]`.
+</ResponseField>
+
+## Static parsing methods
+
+### Parse
+
+Parses a JSON Path string, throwing on syntax errors.
+
+```csharp
+public static JsonPath Parse(string source, PathParsingOptions? options = null)
+```
+
+<ParamField body="source" type="string" required>
+  The JSON Path expression string. For example: `$.store.book[*].author`.
+</ParamField>
+
+<ParamField body="options" type="PathParsingOptions?">
+  Optional parsing options. Controls whitespace tolerance and whether relative path starts are allowed.
+</ParamField>
+
+<ResponseField name="returns" type="JsonPath">
+  The parsed `JsonPath`.
+</ResponseField>
+
+```csharp
+var path = JsonPath.Parse("$.store.book[*].author");
+```
+
+---
+
+### TryParse
+
+Parses a JSON Path string without throwing on failure.
+
+```csharp
+public static bool TryParse(
+    string source,
+    out JsonPath? path,
+    PathParsingOptions? options = null)
+```
+
+<ParamField body="source" type="string" required>
+  The JSON Path expression string.
+</ParamField>
+
+<ParamField body="path" type="JsonPath?" required>
+  Set to the parsed path on success; `null` on failure.
+</ParamField>
+
+<ParamField body="options" type="PathParsingOptions?">
+  Optional parsing options.
+</ParamField>
+
+<ResponseField name="returns" type="bool">
+  `true` if parsing succeeded; `false` otherwise.
+</ResponseField>
+
+```csharp
+if (JsonPath.TryParse("$.users[?(@.active == true)]", out var path))
+    Console.WriteLine($"Parsed: {path}");
+else
+    Console.WriteLine("Invalid path");
+```
+
+## Instance methods
+
+### Evaluate
+
+Evaluates this path against a JSON document root.
+
+```csharp
+public PathResult Evaluate(JsonNode? root, PathEvaluationOptions? options = null)
+```
+
+<ParamField body="root" type="JsonNode?" required>
+  The root of the JSON document to evaluate against. May be `null` to represent a JSON `null` root.
+</ParamField>
+
+<ParamField body="options" type="PathEvaluationOptions?">
+  Optional evaluation options.
+</ParamField>
+
+<ResponseField name="returns" type="PathResult">
+  A `PathResult` wrapping a `NodeList` of all matched nodes, each carrying its value and the path that located it.
+</ResponseField>
+
+```csharp
+var json = JsonNode.Parse("""
+    {
+      "store": {
+        "book": [
+          {"title": "Moby Dick", "price": 8.99},
+          {"title": "The Great Gatsby", "price": 12.50}
+        ]
+      }
+    }
+    """);
+
+var path = JsonPath.Parse("$.store.book[*].title");
+var result = path.Evaluate(json);
+
+foreach (var node in result.Matches)
+    Console.WriteLine(node.Value); // "Moby Dick", "The Great Gatsby"
+```
+
+---
+
+### Append (name)
+
+Creates a new `JsonPath` with an additional named child segment appended.
+
+```csharp
+public JsonPath Append(string name)
+```
+
+<ParamField body="name" type="string" required>
+  The property name to select.
+</ParamField>
+
+<ResponseField name="returns" type="JsonPath">
+  A new `JsonPath` instance. The original is unchanged.
+</ResponseField>
+
+---
+
+### Append (index)
+
+Creates a new `JsonPath` with an additional array index segment appended.
+
+```csharp
+public JsonPath Append(int index)
+```
+
+<ParamField body="index" type="int" required>
+  The zero-based array index to select.
+</ParamField>
+
+<ResponseField name="returns" type="JsonPath">
+  A new `JsonPath` instance. The original is unchanged.
+</ResponseField>
+
+```csharp
+var path = JsonPath.Root
+    .Append("users")
+    .Append(0)
+    .Append("email");
+
+Console.WriteLine(path); // $.users[0].email
+```
+
+---
+
+### ToString / BuildString
+
+`ToString()` returns the canonical string representation of the path. `BuildString(StringBuilder)` appends to an existing `StringBuilder` to avoid extra allocations.
+
+```csharp
+public override string ToString()
+public void BuildString(StringBuilder builder)
+```
+
+## Serialization
+
+`JsonPath` is decorated with `[JsonConverter(typeof(JsonPathConverter))]` and `[TypeConverter(typeof(JsonPathTypeConverter))]` enabling transparent serialization with `System.Text.Json` and type conversion in model binding scenarios.

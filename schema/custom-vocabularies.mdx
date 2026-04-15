@@ -1,0 +1,149 @@
+---
+title: "Build and register custom JSON Schema vocabularies"
+description: "Learn how vocabularies work in JSON Schema 2019-09 and 2020-12, create custom keywords with IKeywordHandler, and register them with VocabularyRegistry."
+---
+
+A vocabulary is a named, URI-identified collection of JSON Schema keywords. Vocabularies were introduced in draft 2019-09 and form the foundation of how schemas declare which keywords they expect an implementation to understand. You can define your own vocabularies to add reusable keyword behaviour to `JsonSchema.Net`.
+
+## Vocabularies in JSON Schema 2019-09 and 2020-12
+
+Both modern drafts define a fixed set of standard vocabularies. Each vocabulary has a URI identifier and a corresponding set of keywords.
+
+### Draft 2019-09 vocabularies
+
+| Vocabulary | URI | Keywords (examples) |
+|---|---|---|
+| Core | `…/2019-09/vocab/core` | `$id`, `$ref`, `$anchor`, `$schema`, `$vocabulary` |
+| Applicator | `…/2019-09/vocab/applicator` | `allOf`, `anyOf`, `oneOf`, `if`/`then`/`else`, `properties` |
+| Validation | `…/2019-09/vocab/validation` | `type`, `enum`, `const`, `minimum`, `maxLength`, `required` |
+| Meta-Data | `…/2019-09/vocab/meta-data` | `title`, `description`, `default`, `examples`, `readOnly`, `writeOnly` |
+| Format | `…/2019-09/vocab/format` | `format` (annotation only) |
+| Content | `…/2019-09/vocab/content` | `contentEncoding`, `contentMediaType`, `contentSchema` |
+
+### Draft 2020-12 vocabularies
+
+| Vocabulary | URI | Keywords (examples) |
+|---|---|---|
+| Core | `…/2020-12/vocab/core` | `$id`, `$ref`, `$dynamicRef`, `$dynamicAnchor`, `$schema` |
+| Applicator | `…/2020-12/vocab/applicator` | `allOf`, `anyOf`, `oneOf`, `if`/`then`/`else`, `properties`, `prefixItems` |
+| Unevaluated | `…/2020-12/vocab/unevaluated` | `unevaluatedItems`, `unevaluatedProperties` |
+| Validation | `…/2020-12/vocab/validation` | `type`, `enum`, `const`, `minimum`, `maxLength`, `required` |
+| Meta-Data | `…/2020-12/vocab/meta-data` | `title`, `description`, `default`, `examples`, `deprecated` |
+| Format-Annotation | `…/2020-12/vocab/format-annotation` | `format` (annotation only) |
+| Format-Assertion | `…/2020-12/vocab/format-assertion` | `format` (validation assertion) |
+| Content | `…/2020-12/vocab/content` | `contentEncoding`, `contentMediaType`, `contentSchema` |
+
+A schema can declare which vocabularies it uses (and whether each is required or optional) via the `$vocabulary` keyword in a meta-schema. The implementation reads this declaration and uses the correct keyword set for evaluation.
+
+## Creating a custom keyword
+
+Custom keywords implement `IKeywordHandler`. The interface has three members:
+
+| Member | Purpose |
+|---|---|
+| `string Name` | The keyword name as it appears in JSON (e.g. `"x-minimum-exclusive"`). |
+| `object? ValidateKeywordValue(JsonElement value)` | Parses and validates the raw JSON value of the keyword. The return value is stored in `KeywordData.Value` and passed to `BuildSubschemas` and `Evaluate`. |
+| `void BuildSubschemas(KeywordData keyword, BuildContext context)` | Called during schema construction to build any nested schemas referenced by this keyword. |
+| `KeywordEvaluation Evaluate(KeywordData keyword, EvaluationContext context)` | Performs the keyword's validation or annotation logic and returns the result. |
+
+### Example: a custom `x-divisible-by` keyword
+
+```csharp
+using System.Text.Json;
+using Json.Schema;
+
+public class DivisibleByKeyword : IKeywordHandler
+{
+    public static readonly DivisibleByKeyword Instance = new();
+
+    public string Name => "x-divisible-by";
+
+    public object? ValidateKeywordValue(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetDecimal(out var d) || d <= 0)
+            throw new JsonException("x-divisible-by must be a positive number.");
+        return d;
+    }
+
+    public void BuildSubschemas(KeywordData keyword, BuildContext context)
+    {
+        // This keyword has no subschemas.
+    }
+
+    public KeywordEvaluation Evaluate(KeywordData keyword, EvaluationContext context)
+    {
+        var divisor = (decimal)keyword.Value!;
+
+        if (context.LocalInstance.ValueKind != JsonValueKind.Number)
+            return KeywordEvaluation.Skip; // only applies to numbers
+
+        var value = context.LocalInstance.GetDecimal();
+        if (value % divisor == 0)
+            return KeywordEvaluation.Valid;
+
+        return KeywordEvaluation.Invalid($"Value {value} is not divisible by {divisor}.");
+    }
+}
+```
+
+## Defining a vocabulary
+
+Group one or more keyword handlers into a `Vocabulary` instance. A vocabulary requires a URI identifier and at least one keyword handler:
+
+```csharp
+var extensionsVocabulary = new Vocabulary(
+    new Uri("https://example.com/schema/vocab/extensions"),
+    DivisibleByKeyword.Instance
+    // add more keyword handlers here
+);
+```
+
+## Registering with VocabularyRegistry
+
+Register the vocabulary with `VocabularyRegistry.Global` before any schema that uses it is loaded:
+
+```csharp
+VocabularyRegistry.Global.Register(extensionsVocabulary);
+```
+
+Local vocabulary registries can be attached to `EvaluationOptions` for scoped registrations:
+
+```csharp
+var options = new EvaluationOptions();
+options.VocabularyRegistry.Register(extensionsVocabulary);
+```
+
+Once registered, a meta-schema can declare the vocabulary in its `$vocabulary` keyword, and any schema that uses that meta-schema will have access to the custom keyword.
+
+<Warning>
+  Official built-in vocabularies (the standard draft 2019-09 and draft 2020-12 ones) cannot be overwritten or removed. Attempting to register a vocabulary with a conflicting well-known URI throws an `ArgumentException`.
+</Warning>
+
+## Built-in extension vocabularies
+
+Several extension vocabulary packages ship alongside the core library:
+
+<CardGroup cols={2}>
+  <Card title="JsonSchema.Net.ArrayExt" icon="list" href="https://www.nuget.org/packages/JsonSchema.Net.ArrayExt">
+    The Array Extensions vocabulary adds keywords for ordering, uniqueness, and additional array constraints not covered by the standard drafts.
+  </Card>
+  <Card title="JsonSchema.Net.Data" icon="database" href="https://www.nuget.org/packages/JsonSchema.Net.Data">
+    The Data vocabulary (2023) adds keywords that reference values from the instance or from external documents during validation.
+  </Card>
+  <Card title="JsonSchema.Net.OpenApi" icon="code" href="https://www.nuget.org/packages/JsonSchema.Net.OpenApi">
+    The OpenAPI 3.1 vocabulary extension adds the extra keywords and format values defined by the OpenAPI specification.
+  </Card>
+</CardGroup>
+
+Each extension vocabulary is registered by calling its `Register()` method at application startup:
+
+```csharp
+using Json.Schema.ArrayExt;
+using Json.Schema.Data;
+using Json.Schema.OpenApi;
+
+// Register all extension vocabularies your application needs
+Json.Schema.ArrayExt.MetaSchemas.Register();
+Json.Schema.Data.Vocabularies.Register();
+Json.Schema.OpenApi.Vocabularies.Register();
+```

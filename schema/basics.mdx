@@ -1,0 +1,172 @@
+---
+title: "JSON Schema validation with JsonSchema.Net library"
+description: "Learn how to load, build, and evaluate JSON Schema documents using JsonSchema.Net, which supports drafts 6, 7, 2019-09, and 2020-12."
+---
+
+`JsonSchema.Net` is a full implementation of the JSON Schema specification for .NET. It supports all four active specification drafts, produces structured validation output with annotations and errors, and integrates with the standard `System.Text.Json` serialization pipeline.
+
+## Supported drafts
+
+| Draft | Meta-schema URI |
+|---|---|
+| Draft 6 | `http://json-schema.org/draft-06/schema#` |
+| Draft 7 | `http://json-schema.org/draft-07/schema#` |
+| Draft 2019-09 | `https://json-schema.org/draft/2019-09/schema` |
+| Draft 2020-12 | `https://json-schema.org/draft/2020-12/schema` |
+
+The library auto-detects the draft from the `$schema` keyword in the document. When no `$schema` is present, it defaults to draft 2020-12 behavior. The library also serves as a test-bed for features proposed for the next specification draft.
+
+## Loading a schema
+
+There are four ways to obtain a `JsonSchema` instance.
+
+### From a string
+
+Parse a JSON Schema document stored in a string:
+
+```csharp
+var schema = JsonSchema.FromText("""
+    {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "age":  { "type": "integer", "minimum": 0 }
+      },
+      "required": ["name"]
+    }
+    """);
+```
+
+### From a file
+
+Read and parse a schema from the filesystem:
+
+```csharp
+var schema = JsonSchema.FromFile("/path/to/schema.json");
+```
+
+An optional `baseUri` parameter lets you override the base URI used for `$ref` resolution:
+
+```csharp
+var schema = JsonSchema.FromFile(
+    "/path/to/schema.json",
+    baseUri: new Uri("https://example.com/schemas/my-schema"));
+```
+
+### Via System.Text.Json deserialization
+
+`JsonSchema` ships with a `JsonConverter`, so you can deserialize it through the standard pipeline:
+
+```csharp
+var schema = JsonSerializer.Deserialize<JsonSchema>(jsonText);
+```
+
+### Using the fluent builder
+
+`JsonSchemaBuilder` provides a fluent API for constructing schemas entirely in code. Each method corresponds to a JSON Schema keyword:
+
+```csharp
+var schema = new JsonSchemaBuilder()
+    .Schema(MetaSchemas.Draft202012Id)
+    .Title("Person")
+    .Type(SchemaValueType.Object)
+    .Properties(
+        ("name", new JsonSchemaBuilder().Type(SchemaValueType.String)),
+        ("age",  new JsonSchemaBuilder()
+            .Type(SchemaValueType.Integer)
+            .Minimum(0))
+    )
+    .Required("name")
+    .Build();
+```
+
+`JsonSchemaBuilder` has an implicit conversion to `JsonSchema`, so you can omit `.Build()` wherever a `JsonSchema` is expected.
+
+## Evaluating a schema
+
+Call `Evaluate` on a `JsonSchema` instance and pass a `JsonElement` representing the data:
+
+```csharp
+using System.Text.Json;
+using Json.Schema;
+
+var schema = JsonSchema.FromText("""
+    { "type": "string", "minLength": 3 }
+    """);
+
+var instance = JsonDocument.Parse("\"hello\"").RootElement;
+var results  = schema.Evaluate(instance);
+
+Console.WriteLine(results.IsValid); // true
+```
+
+Pass an `EvaluationOptions` instance as the second argument to customise output format, format validation, and more. See [Configuring evaluation options](/schema/validation) for details.
+
+## Schema registration
+
+When a schema contains `$ref` keywords pointing to external URIs, those targets must be resolvable at evaluation time. Register schemas by URI with `SchemaRegistry.Global`:
+
+```csharp
+var addressSchema = JsonSchema.FromFile("address.json");
+SchemaRegistry.Global.Register(addressSchema);
+
+// Now schemas that $ref the address schema's $id will resolve correctly.
+var personSchema = JsonSchema.FromFile("person.json");
+var results = personSchema.Evaluate(instance);
+```
+
+You can also supply a `Fetch` delegate on the registry to load schemas on demand:
+
+```csharp
+SchemaRegistry.Global.Fetch = (uri, registry) =>
+{
+    var json = File.ReadAllText(uri.LocalPath);
+    return JsonSchema.FromText(json);
+};
+```
+
+Local (per-evaluation) registries can be attached to `EvaluationOptions` when you need to scope schema lookups to a single operation rather than the entire application.
+
+## Boolean schemas
+
+JSON Schema allows the literal values `true` and `false` as schemas. `JsonSchema.True` passes every instance; `JsonSchema.False` fails every instance. Both are exposed as static singletons:
+
+```csharp
+var alwaysValid   = JsonSchema.True;
+var alwaysInvalid = JsonSchema.False;
+
+Console.WriteLine(alwaysValid.Evaluate(JsonDocument.Parse("42").RootElement).IsValid);   // true
+Console.WriteLine(alwaysInvalid.Evaluate(JsonDocument.Parse("42").RootElement).IsValid); // false
+```
+
+Boolean schemas also appear as property values inside a schema document — for example `"additionalProperties": false`.
+
+## Output formats
+
+The library supports three output formats, controlled by `EvaluationOptions.OutputFormat`:
+
+| Format | Description |
+|---|---|
+| `Flag` | Returns only a single pass/fail node. All annotation and error detail is stripped. Fastest option for production validation where you only need a yes/no answer. |
+| `List` | All result nodes are flattened as children of the root node. Useful for collecting all errors in a single iterable list. |
+| `Hierarchical` | Result nodes mirror the structure of the schema. Each keyword node contains its own annotations and errors as nested children. Default format. |
+
+```csharp
+var options = new EvaluationOptions
+{
+    OutputFormat = OutputFormat.List
+};
+
+var results = schema.Evaluate(instance, options);
+
+foreach (var detail in results.Details ?? [])
+{
+    if (!detail.IsValid)
+        Console.WriteLine($"{detail.InstanceLocation}: {string.Join(", ", detail.Errors?.Values ?? [])}");
+}
+```
+
+<Tip>
+  Use `OutputFormat.Flag` in hot paths where you only need a pass/fail result. It skips annotation collection and result tree construction, making evaluation significantly faster.
+</Tip>

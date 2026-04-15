@@ -1,0 +1,184 @@
+---
+title: "Evaluate declarative JSON Logic rules with JsonLogic"
+description: "Learn how to parse and evaluate declarative, data-driven JSON Logic rules in .NET using the JsonLogic package, including custom operator support."
+---
+
+The `JsonLogic` package implements the [JSON Logic](https://jsonlogic.com/) specification for .NET. Rules are expressed as plain JSON objects and evaluated against a data context at runtime, keeping business logic portable, serializable, and decoupled from your application code.
+
+## Installation
+
+```bash
+dotnet add package JsonLogic
+```
+
+## What is JSON Logic?
+
+JSON Logic represents conditional and computational rules as JSON. A rule is a single-key object whose key is an operator and whose value is the list of arguments. Rules compose naturally—any argument can itself be a rule—so complex expressions are built from small, readable primitives.
+
+```json
+{
+  "and": [
+    { "<": [{ "var": "temp" }, 110] },
+    { "==": [{ "var": "pie.filling" }, "apple"] }
+  ]
+}
+```
+
+## Basic usage
+
+<Steps>
+  <Step title="Parse the rule and data">
+    Parse your rule and data context from JSON strings, or build them programmatically as `JsonNode` objects.
+
+    ```csharp
+    var rule = JsonNode.Parse(
+        """
+        {
+          "and": [
+            { "<":  [{ "var": "temp" },         110       ] },
+            { "==": [{ "var": "pie.filling" }, "apple"    ] }
+          ]
+        }
+        """
+    );
+
+    var data = JsonNode.Parse(
+        """
+        {
+          "temp": 100,
+          "pie": { "filling": "apple" }
+        }
+        """
+    );
+    ```
+  </Step>
+  <Step title="Apply the rule">
+    Call `JsonLogic.Apply` with the rule and the data context. The return value is `JsonNode?`.
+
+    ```csharp
+    var result = JsonLogic.Apply(rule, data);
+    // result: true
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  `JsonLogic.Apply` returns `JsonNode?`. Inspect or cast the result using the standard `System.Text.Json.Nodes` API. Passing `null` as the context is valid when the rule does not reference any variables.
+</Note>
+
+## Common operators
+
+| Category   | Operators                                                              |
+|------------|------------------------------------------------------------------------|
+| Data access | `var`                                                                 |
+| Equality    | `==`, `!=`, `===`, `!==`                                              |
+| Comparison  | `<`, `>`, `<=`, `>=`                                                  |
+| Logic       | `and`, `or`, `!`, `!!`, `if`, `?:`                                    |
+| Arithmetic  | `+`, `-`, `*`, `/`, `%`, `max`, `min`                                 |
+| String      | `cat`, `substr`, `in`                                                  |
+| Array       | `map`, `filter`, `reduce`, `all`, `some`, `none`, `merge`, `missing`, `missing_some` |
+| Utility     | `log`                                                                  |
+
+### The `var` operator
+
+`var` reads a value from the data context using a dot-delimited path. An optional second argument provides a default when the path is missing.
+
+```json
+{ "var": "user.name" }
+{ "var": ["user.name", "anonymous"] }
+```
+
+### The `if` operator
+
+`if` works as a chain of condition/value pairs with an optional trailing default:
+
+```json
+{ "if": [condition, valueIfTrue, valueIfFalse] }
+```
+
+Both `if` and `?:` map to the same implementation.
+
+### Comparison with three arguments
+
+`<` and `<=` accept a third argument to express range checks:
+
+```json
+{ "<":  [1, { "var": "x" }, 10] }
+{ "<=": [1, { "var": "x" }, 10] }
+```
+
+## Custom operators
+
+Implement the `IRule` interface and register with `RuleRegistry` to extend the operator set.
+
+### Using `IRule` directly
+
+`IRule` is the lightweight path that requires no reflection and is AOT-safe. Implement `Apply` to receive the raw arguments node and the evaluation context.
+
+```csharp
+public class PowerRule : IRule
+{
+    public JsonNode? Apply(JsonNode? args, EvaluationContext context)
+    {
+        if (args is not JsonArray { Count: 2 } array)
+            throw new JsonLogicException("'pow' requires exactly two arguments");
+
+        var baseVal = (double)(decimal)(JsonLogic.Apply(array[0], context) as JsonValue)!;
+        var expVal  = (double)(decimal)(JsonLogic.Apply(array[1], context) as JsonValue)!;
+
+        return JsonValue.Create(Math.Pow(baseVal, expVal));
+    }
+}
+```
+
+Register it at startup:
+
+```csharp
+RuleRegistry.AddRule("pow", new PowerRule());
+```
+
+### Using `Rule` with `[Operator]`
+
+For scenarios that require JSON deserialization of the rule type itself, subclass `Rule` and decorate with `[Operator]`:
+
+```csharp
+[Operator("pow")]
+public class PowerRule : Rule
+{
+    private readonly Rule _base;
+    private readonly Rule _exponent;
+
+    public PowerRule(Rule @base, Rule exponent)
+    {
+        _base     = @base;
+        _exponent = exponent;
+    }
+
+    public override JsonNode? Apply(JsonNode? data, JsonNode? extra = null)
+    {
+        var b = (double?)(decimal?)(_base.Apply(data, extra) as JsonValue);
+        var e = (double?)(decimal?)(_exponent.Apply(data, extra) as JsonValue);
+        return JsonValue.Create(Math.Pow(b ?? 0, e ?? 0));
+    }
+}
+```
+
+Register with reflection (non-AOT):
+
+```csharp
+RuleRegistry.AddRule<PowerRule>();
+```
+
+Register with a `JsonSerializerContext` (AOT-safe):
+
+```csharp
+RuleRegistry.AddRule<PowerRule>(MySerializerContext.Default);
+```
+
+<Tip>
+  Prefer the `IRule` / `RuleRegistry.AddRule(string, IRule)` overload when you do not need JSON deserialization of the rule type itself. It requires no reflection and works under Native AOT without additional configuration.
+</Tip>
+
+<Warning>
+  The `AddRule<T>()` overload without a `JsonSerializerContext` is annotated `[RequiresDynamicCode]`. For Native AOT builds, use the overload that accepts a `JsonSerializerContext` and ensure your rule converter implements `IWeaklyTypedJsonConverter`.
+</Warning>

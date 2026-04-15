@@ -1,0 +1,217 @@
+---
+title: 'JsonSchemaBuilder class — JsonSchema.Net API reference'
+description: 'API reference for the fluent JsonSchemaBuilder in JsonSchema.Net. Build JSON Schema documents programmatically using chainable keyword methods.'
+---
+
+`JsonSchemaBuilder` provides a fluent builder API for constructing `JsonSchema` objects in code. Each keyword method adds or overwrites the corresponding JSON Schema keyword and returns the same builder instance so calls can be chained.
+
+Extension methods in `JsonSchema.Net` (and its companion packages) add all standard keyword methods to this class. The examples below use the most common ones.
+
+## Static properties
+
+<ResponseField name="Empty" type="JsonSchemaBuilder">
+  A read-only builder representing an empty schema `{}`. Cannot be mutated.
+</ResponseField>
+
+<ResponseField name="True" type="JsonSchemaBuilder">
+  A read-only builder that builds a schema equivalent to the boolean `true` schema.
+</ResponseField>
+
+<ResponseField name="False" type="JsonSchemaBuilder">
+  A read-only builder that builds a schema equivalent to the boolean `false` schema.
+</ResponseField>
+
+## Constructor
+
+```csharp
+public JsonSchemaBuilder(BuildOptions? buildOptions = null)
+```
+
+<ParamField body="buildOptions" type="BuildOptions?">
+  Optional build options passed to `Build()`. Can be overridden per-call in `Build()`.
+</ParamField>
+
+## Core methods
+
+### Add (low-level)
+
+Adds an arbitrary keyword value. Prefer the typed extension methods listed below.
+
+```csharp
+public void Add(string keyword, JsonNode? value)
+public void Add(string keyword, JsonSchemaBuilder builder)
+public void Add(string keyword, IEnumerable<JsonSchemaBuilder> builders)
+public void Add(string keyword, IEnumerable<(string, JsonSchemaBuilder)> builders)
+public void Add(string keyword, IEnumerable<KeyValuePair<string, JsonSchemaBuilder>> builders)
+```
+
+### Build
+
+Finalizes the builder and returns a `JsonSchema`.
+
+```csharp
+public JsonSchema Build(BuildOptions? options = null, Uri? baseUri = null)
+```
+
+<ParamField body="options" type="BuildOptions?">
+  Build options. Overrides any options passed to the constructor.
+</ParamField>
+
+<ParamField body="baseUri" type="Uri?">
+  A base URI to associate with the schema for reference resolution.
+</ParamField>
+
+<ResponseField name="returns" type="JsonSchema">
+  The constructed schema.
+</ResponseField>
+
+### RefRoot / RecursiveRefRoot
+
+Convenience factories that produce a builder with a `$ref` or `$recursiveRef` pointing at the root (`#`).
+
+```csharp
+public static JsonSchemaBuilder RefRoot()
+public static JsonSchemaBuilder RecursiveRefRoot()
+```
+
+## Keyword methods
+
+All of the methods below are extension methods that ship with `JsonSchema.Net`. They follow the same pattern: accept one or more parameters and return `this` for chaining.
+
+### Schema dialect
+
+```csharp
+builder.Schema(new Uri("https://json-schema.org/draft/2020-12/schema"))
+```
+
+### Metadata keywords
+
+```csharp
+builder
+    .Comment("This schema validates user objects")
+    .Title("User")
+    .Description("Represents an application user account");
+```
+
+### Type constraints
+
+```csharp
+builder.Type(SchemaValueType.Object)
+
+// Multiple types allowed:
+builder.Type(SchemaValueType.String | SchemaValueType.Null)
+```
+
+### Properties and required
+
+```csharp
+builder
+    .Properties(
+        ("id",   new JsonSchemaBuilder().Type(SchemaValueType.Integer)),
+        ("name", new JsonSchemaBuilder().Type(SchemaValueType.String)),
+        ("email", new JsonSchemaBuilder().Type(SchemaValueType.String).Format(Formats.Email))
+    )
+    .Required("id", "name")
+    .AdditionalProperties(JsonSchemaBuilder.False)
+```
+
+### Array keywords
+
+```csharp
+builder
+    .Type(SchemaValueType.Array)
+    .Items(new JsonSchemaBuilder().Type(SchemaValueType.String))
+    .MinItems(1)
+    .MaxItems(100)
+    .UniqueItems(true)
+```
+
+### Composition keywords
+
+```csharp
+// allOf — all sub-schemas must pass
+builder.AllOf(
+    new JsonSchemaBuilder().Required("id"),
+    new JsonSchemaBuilder().Required("name"))
+
+// anyOf — at least one must pass
+builder.AnyOf(
+    new JsonSchemaBuilder().Type(SchemaValueType.String),
+    new JsonSchemaBuilder().Type(SchemaValueType.Number))
+
+// oneOf — exactly one must pass
+builder.OneOf(
+    new JsonSchemaBuilder().Const("active"),
+    new JsonSchemaBuilder().Const("inactive"))
+
+// not — must not match
+builder.Not(new JsonSchemaBuilder().Type(SchemaValueType.Null))
+```
+
+### Conditional keywords
+
+```csharp
+builder
+    .If(new JsonSchemaBuilder().Properties(
+        ("type", new JsonSchemaBuilder().Const("employee"))))
+    .Then(new JsonSchemaBuilder().Required("employeeId"))
+    .Else(new JsonSchemaBuilder().Required("contractId"))
+```
+
+### Constant and enum
+
+```csharp
+builder.Const(JsonNode.Parse("""{"status": "ok"}"""))
+
+builder.Enum("draft", "published", "archived")
+```
+
+### Numeric constraints
+
+```csharp
+builder
+    .Type(SchemaValueType.Number)
+    .Minimum(0)
+    .Maximum(100)
+    .ExclusiveMinimum(0)
+    .ExclusiveMaximum(100)
+    .MultipleOf(0.5)
+```
+
+### String constraints
+
+```csharp
+builder
+    .Type(SchemaValueType.String)
+    .MinLength(1)
+    .MaxLength(255)
+    .Pattern(@"^[a-zA-Z0-9_]+$")
+    .Format(Formats.Email)
+```
+
+## Complete example
+
+```csharp
+var schema = new JsonSchemaBuilder()
+    .Schema(MetaSchemas.Draft202012Id)
+    .Title("Product")
+    .Description("A product in the catalogue")
+    .Type(SchemaValueType.Object)
+    .Properties(
+        ("id",    new JsonSchemaBuilder().Type(SchemaValueType.Integer)),
+        ("name",  new JsonSchemaBuilder().Type(SchemaValueType.String).MinLength(1)),
+        ("price", new JsonSchemaBuilder().Type(SchemaValueType.Number).Minimum(0)),
+        ("tags",  new JsonSchemaBuilder()
+            .Type(SchemaValueType.Array)
+            .Items(new JsonSchemaBuilder().Type(SchemaValueType.String))
+            .UniqueItems(true))
+    )
+    .Required("id", "name", "price")
+    .AdditionalProperties(JsonSchemaBuilder.False)
+    .Build();
+
+var result = schema.Evaluate(
+    JsonDocument.Parse("""{"id": 1, "name": "Widget", "price": 9.99}""").RootElement);
+
+Console.WriteLine(result.IsValid); // true
+```

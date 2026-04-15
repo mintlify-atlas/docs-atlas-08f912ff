@@ -1,0 +1,119 @@
+---
+title: 'JsonSchemaExtensions — DataGeneration API reference'
+description: 'API reference for JsonSchemaExtensions in JsonSchema.Net.DataGeneration. Generate random sample JSON data that satisfies the constraints of a given schema.'
+---
+
+`JsonSchemaExtensions` is a static class in the `Json.Schema.DataGeneration` namespace that adds data-generation capability to `JsonSchema`. It analyses schema constraints and uses weighted random generators to produce a `JsonNode` that satisfies those constraints.
+
+Install the NuGet package to use this functionality:
+
+```bash
+dotnet add package JsonSchema.Net.DataGeneration
+```
+
+## Methods
+
+### GenerateData
+
+Generates a random `JsonNode` that satisfies the schema.
+
+```csharp
+public static GenerationResult GenerateData(this JsonSchema schema)
+```
+
+<ParamField body="schema" type="JsonSchema" required>
+  The schema whose constraints the generated data must satisfy.
+</ParamField>
+
+<ResponseField name="returns" type="GenerationResult">
+  A result object. Check `IsSuccess` before accessing `Result`. On failure, `ErrorMessage` contains a human-readable explanation.
+</ResponseField>
+
+```csharp
+using Json.Schema;
+using Json.Schema.DataGeneration;
+
+var schema = new JsonSchemaBuilder()
+    .Type(SchemaValueType.Object)
+    .Properties(
+        ("username", new JsonSchemaBuilder()
+            .Type(SchemaValueType.String)
+            .MinLength(3)
+            .MaxLength(20)),
+        ("age", new JsonSchemaBuilder()
+            .Type(SchemaValueType.Integer)
+            .Minimum(18)
+            .Maximum(99))
+    )
+    .Required("username", "age")
+    .Build();
+
+var result = schema.GenerateData();
+
+if (result.IsSuccess)
+    Console.WriteLine(result.Result); // e.g. {"username":"xR2k","age":34}
+else
+    Console.WriteLine(result.ErrorMessage);
+```
+
+---
+
+### GenerateData (obsolete overload)
+
+An obsolete overload that accepted `BuildOptions`. The parameter was never used. Prefer the parameterless overload.
+
+```csharp
+[Obsolete]
+public static GenerationResult GenerateData(this JsonSchema schema, BuildOptions? options)
+```
+
+<ParamField body="schema" type="JsonSchema" required>
+  The schema to generate data for.
+</ParamField>
+
+<ParamField body="options" type="BuildOptions?">
+  Not used. Will be removed at the next major version. Pass `null` or migrate to the parameterless overload.
+</ParamField>
+
+## GenerationResult
+
+<ResponseField name="IsSuccess" type="bool">
+  `true` when data was generated successfully; `false` otherwise.
+</ResponseField>
+
+<ResponseField name="Result" type="JsonNode?">
+  The generated JSON value. `null` when `IsSuccess` is `false`.
+</ResponseField>
+
+<ResponseField name="ErrorMessage" type="string?">
+  A description of why generation failed when `IsSuccess` is `false`. May describe conflicting constraints, unsupported schema combinations, or the boolean `false` schema.
+</ResponseField>
+
+## Supported schema keywords
+
+The generator analyses the following keywords when computing data requirements:
+
+| Category | Keywords |
+|---|---|
+| Type | `type` |
+| Numeric | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf` |
+| String | `minLength`, `maxLength`, `pattern`, `format` |
+| Array | `items`, `contains`, `minItems`, `maxItems` |
+| Object | `properties`, `required` |
+| Composition | `allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/`else` |
+| Reference | `$ref` |
+| Constant | `const`, `enum` |
+
+`const` and `enum` take priority over type-based generators. When multiple `anyOf` / `oneOf` branches are present, one is chosen at random.
+
+## Notes on generation limits
+
+The generator has a hard stop on recursive `$ref` depth to prevent infinite loops in recursive schemas. If all valid variations produce conflicts or have no applicable generator, `GenerationResult` will be a failure with a message describing how many variations were attempted.
+
+```csharp
+// Boolean false schema always fails generation
+var falseSchema = JsonSchema.False;
+var result = falseSchema.GenerateData();
+Console.WriteLine(result.IsSuccess);      // false
+Console.WriteLine(result.ErrorMessage);   // "Boolean schema `false` allows no values"
+```

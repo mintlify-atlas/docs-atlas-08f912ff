@@ -1,0 +1,181 @@
+---
+title: 'EvaluationOptions class — JsonSchema.Net API reference'
+description: 'API reference for EvaluationOptions in JsonSchema.Net. Configure output format, format validation, annotation collection, and evaluation culture.'
+---
+
+`EvaluationOptions` controls every aspect of how `JsonSchema.Evaluate()` operates. Pass an instance to `JsonSchema.Evaluate()` to override the global defaults, or modify `EvaluationOptions.Default` to change behaviour application-wide.
+
+## Static members
+
+<ResponseField name="Default" type="EvaluationOptions">
+  The shared default options instance. Mutating this object affects all evaluations that do not supply explicit options.
+</ResponseField>
+
+### From
+
+Creates a deep copy of an existing options object.
+
+```csharp
+public static EvaluationOptions From(EvaluationOptions other)
+```
+
+<ParamField body="other" type="EvaluationOptions" required>
+  The source options to copy.
+</ParamField>
+
+<ResponseField name="returns" type="EvaluationOptions">
+  A new `EvaluationOptions` instance with identical settings. Mutations to the copy do not affect the source.
+</ResponseField>
+
+```csharp
+// Start from current defaults, then customise
+var options = EvaluationOptions.From(EvaluationOptions.Default);
+options.OutputFormat = OutputFormat.List;
+```
+
+## Properties
+
+<ResponseField name="OutputFormat" type="OutputFormat" default="Hierarchical">
+  Controls the shape of the `EvaluationResults` tree returned by `Evaluate()`.
+
+  | Value | Description |
+  |---|---|
+  | `Flag` | Returns a single pass/fail node. Fastest — no annotations or errors collected. |
+  | `List` | All result nodes are flattened as siblings under the root node. |
+  | `Hierarchical` | Result nodes mirror the structure of the schema. |
+</ResponseField>
+
+<ResponseField name="RequireFormatValidation" type="bool" default="false">
+  When `true`, the `format` keyword produces validation failures for unrecognised or non-conformant values. When `false` (default), `format` only produces annotations for drafts 2019-09 and earlier, or follows the `$vocabulary` requirement in draft 2020-12 meta-schemas.
+</ResponseField>
+
+<ResponseField name="FormatRegistry" type="FormatRegistry" default="FormatRegistry.Global">
+  The format registry used to look up format validators. Falls back to `FormatRegistry.Global` when a format is not found in the local registry.
+</ResponseField>
+
+<ResponseField name="PreserveDroppedAnnotations" type="bool" default="false">
+  When `true`, annotations from failing subschemas are preserved and surfaced under a `droppedAnnotations` property in the serialized output instead of being discarded.
+</ResponseField>
+
+<ResponseField name="AddAnnotationForUnknownKeywords" type="bool" default="false">
+  When `true`, unknown keywords produce an annotation. Useful for catching typos in hand-authored schemas.
+</ResponseField>
+
+<ResponseField name="IgnoredAnnotations" type="IEnumerable&lt;Type&gt;?">
+  Read-only view of the keyword types whose annotations are currently suppressed. Managed via `IgnoreAnnotationsFrom<T>()`, `IgnoreAllAnnotations()`, `ClearIgnoredAnnotations()`, and `CollectAnnotationsFrom<T>()`.
+</ResponseField>
+
+<ResponseField name="Culture" type="CultureInfo?" default="null">
+  Overrides `ErrorMessages.Culture` for error message localisation within this evaluation. When `null`, the globally configured culture is used.
+</ResponseField>
+
+## Annotation control methods
+
+### IgnoreAnnotationsFrom\<T\>
+
+Suppresses annotation collection for a specific keyword handler type.
+
+```csharp
+public void IgnoreAnnotationsFrom<T>() where T : IKeywordHandler
+```
+
+### IgnoreAllAnnotations
+
+Suppresses annotations from all keyword handlers.
+
+```csharp
+public void IgnoreAllAnnotations()
+```
+
+### ClearIgnoredAnnotations
+
+Restores annotation collection for all keyword handlers.
+
+```csharp
+public void ClearIgnoredAnnotations()
+```
+
+### CollectAnnotationsFrom\<T\>
+
+Re-enables annotation collection for a previously suppressed keyword handler type.
+
+```csharp
+public void CollectAnnotationsFrom<T>() where T : IKeywordHandler
+```
+
+## OutputFormat enum
+
+```csharp
+public enum OutputFormat { Flag, List, Hierarchical }
+```
+
+<ResponseField name="Flag" type="OutputFormat">
+  Only returns a single `IsValid` node. All child detail, annotations, and errors are stripped. Use this for high-throughput validation where error details are not required.
+</ResponseField>
+
+<ResponseField name="List" type="OutputFormat">
+  All result nodes are collected and returned as direct children of the root node, regardless of schema nesting depth.
+</ResponseField>
+
+<ResponseField name="Hierarchical" type="OutputFormat">
+  Result nodes form a tree that mirrors the schema structure. This is the default and is most useful for detailed diagnostics.
+</ResponseField>
+
+## EvaluationResults properties
+
+The object returned by `JsonSchema.Evaluate()`.
+
+<ResponseField name="IsValid" type="bool">
+  `true` if validation passed; `false` otherwise.
+</ResponseField>
+
+<ResponseField name="EvaluationPath" type="JsonPointer">
+  The path through the schema that produced this result node.
+</ResponseField>
+
+<ResponseField name="InstanceLocation" type="JsonPointer">
+  The location within the JSON instance that was evaluated.
+</ResponseField>
+
+<ResponseField name="SchemaLocation" type="Uri">
+  The absolute URI of the schema location, including a JSON Pointer fragment. Uses the generated base URI when no `$id` was present.
+</ResponseField>
+
+<ResponseField name="Annotations" type="Dictionary&lt;string, JsonElement&gt;?">
+  Keyword annotations collected during a successful evaluation. `null` when the node failed or no annotations were produced.
+</ResponseField>
+
+<ResponseField name="Errors" type="Dictionary&lt;string, string&gt;?">
+  Error messages keyed by keyword name. `null` when the node passed.
+</ResponseField>
+
+<ResponseField name="Details" type="List&lt;EvaluationResults&gt;?">
+  Nested child results. Structure depends on `OutputFormat`.
+</ResponseField>
+
+<ResponseField name="Parent" type="EvaluationResults?">
+  The parent result node, available in `List` and `Hierarchical` formats.
+</ResponseField>
+
+## Usage examples
+
+```csharp
+// Fastest possible validation — flag only
+var options = new EvaluationOptions { OutputFormat = OutputFormat.Flag };
+var result = schema.Evaluate(instance, options);
+if (!result.IsValid) Console.WriteLine("Validation failed");
+
+// Collect all errors in list format
+var verboseOptions = new EvaluationOptions
+{
+    OutputFormat = OutputFormat.List,
+    RequireFormatValidation = true
+};
+var verbose = schema.Evaluate(instance, verboseOptions);
+foreach (var detail in verbose.Details ?? [])
+{
+    if (!detail.IsValid && detail.Errors is not null)
+        foreach (var (keyword, message) in detail.Errors)
+            Console.WriteLine($"{detail.InstanceLocation} [{keyword}]: {message}");
+}
+```

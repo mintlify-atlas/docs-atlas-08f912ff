@@ -1,24 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Json Everything",
+  "projectType": "sdk-library",
+  "projectName": "Json Everything",
+  "projectDescription": "A comprehensive suite of System.Text.Json-based .NET libraries covering JSON Schema, JSON Path, JSON Patch, JSON Pointer, JSON Logic, JSON-e, and YAML conversion.",
   "theme": "luma",
-  "colors": {
-    "primary": "#949494",
-    "light": "#444444",
-    "dark": "#b1b1b1"
-  },
-  "favicon": "https://media.brand.dev/d1fda09d-167c-427f-ae1c-3c27a493df70.png",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/json-everything/json-everything"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/json-everything/json-everything"
-    }
-  },
+  "primaryColor": "#949494",
+  "lightColor": "#444444",
+  "darkColor": "#b1b1b1",
   "navigation": {
     "tabs": [
       {
@@ -105,5 +92,37 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Full JSON Schema validation supporting drafts 6, 7, 2019-09, and 2020-12",
+    "Schema generation from .NET types with attribute-driven customization",
+    "Random JSON data generation conforming to a given schema",
+    "JSON Path querying (RFC 9535) with custom function support",
+    "JSON Pointer navigation (RFC 6901) and Relative JSON Pointer",
+    "JSON Patch application and generation (RFC 6902)",
+    "JSON Logic rule evaluation with custom operator support",
+    "JSON-e template evaluation for data-structure parameterization",
+    "YAML to JsonNode conversion via YamlDotNet integration",
+    "ASP.NET Core integration for automatic request body validation",
+    "System.Text.Json-native with AOT support"
+  ],
+  "publicApiSurface": [
+    "JsonSchema.FromText(content)",
+    "JsonSchema.FromFile(fileName)",
+    "JsonSchema.Evaluate(instance, options)",
+    "JsonSchemaBuilder.FromType<T>()",
+    "JsonSchemaBuilder.Build()",
+    "JsonSchema.GenerateData()",
+    "JsonPath.Parse(pathString)",
+    "JsonPath.Evaluate(rootNode)",
+    "JsonPointer.Parse(pointerString)",
+    "JsonPointer.Create<T>(expression)",
+    "JsonPointer.Evaluate(element)",
+    "JsonPatch.Apply(document)",
+    "JsonNode.CreatePatch(target)",
+    "JsonLogic.Apply(rule, data)",
+    "JsonE.Evaluate(template, context)",
+    "YamlNode.ToJsonNode()",
+    "JsonConverter.ToJsonNode(yamlStream)"
+  ]
 }

@@ -1,0 +1,110 @@
+---
+title: 'JsonE class — JsonE.Net template evaluation API reference'
+description: 'API reference for the JsonE static class in JsonE.Net. Evaluate JSON-e templates against a context object to produce transformed JSON output.'
+---
+
+`JsonE` is a static class that evaluates JSON-e templates. JSON-e is a template language for transforming JSON structures: given a template and a context object, `Evaluate` returns a new JSON value with all operators resolved and string interpolations expanded.
+
+## Methods
+
+### Evaluate
+
+Evaluates a JSON-e template against a context and returns the result.
+
+```csharp
+public static JsonNode? Evaluate(JsonNode? template, JsonNode? context = null)
+```
+
+<ParamField body="template" type="JsonNode?" required>
+  The JSON-e template to evaluate. Can be any `JsonNode` — objects, arrays, strings, and scalars are all valid templates. Objects whose single key matches a JSON-e operator are evaluated as that operator.
+</ParamField>
+
+<ParamField body="context" type="JsonNode?">
+  A `JsonObject` providing variables and functions available to the template. Defaults to an empty object `{}` when `null`.
+</ParamField>
+
+<ResponseField name="returns" type="JsonNode?">
+  The evaluated result. Returns `null` when the top-level template evaluates to the JSON-e delete marker.
+</ResponseField>
+
+```csharp
+using Json.JsonE;
+
+var template = JsonNode.Parse("""
+    {
+      "message": "Hello, ${name}!",
+      "items": {"$map": {"$eval": "list"}, "each(x)": "${x * 2}"}
+    }
+    """);
+
+var context = JsonNode.Parse("""{"name": "World", "list": [1, 2, 3]}""");
+
+var result = JsonE.Evaluate(template, context);
+Console.WriteLine(result);
+// {"message":"Hello, World!","items":[2,4,6]}
+```
+
+## Supported operators
+
+JSON-e operators are expressed as single-key JSON objects. The following operators are supported:
+
+| Operator | Purpose |
+|---|---|
+| `$eval` | Evaluates a JSON-e expression string |
+| `$if` / `then` / `else` | Conditional branching |
+| `$map` | Maps an array or object through a template |
+| `$merge` | Merges an array of objects into one |
+| `$mergeDeep` | Deep-merges objects |
+| `$sort` | Sorts an array with an optional comparator expression |
+| `$reverse` | Reverses an array |
+| `$flatten` | Flattens nested arrays by one level |
+| `$flattenDeep` | Flattens nested arrays completely |
+| `$match` | Pattern-match switch over an object |
+| `$switch` | Switch on an expression with cases |
+| `$let` | Introduces local variable bindings |
+| `$json` | Serializes a value to a JSON string |
+| `$fromNow` | Calculates a relative timestamp |
+| `$assert` | Fails evaluation with an error if a condition is false |
+
+## String interpolation
+
+Any string value in the template that contains `${...}` has the expression inside the braces evaluated and the result substituted in place. The expression must resolve to a string, number, or boolean — objects and arrays are not valid interpolation results.
+
+```csharp
+var template = JsonNode.Parse("""{"greeting": "Hello, ${user.name}! You have ${count} messages."}""");
+var context  = JsonNode.Parse("""{"user": {"name": "Alice"}, "count": 3}""");
+var result   = JsonE.Evaluate(template, context);
+Console.WriteLine(result); // {"greeting":"Hello, Alice! You have 3 messages."}
+```
+
+Escape a `${...}` by prefixing with `$`: `$${...}` produces the literal string `${...}`.
+
+## Key escaping
+
+Object keys beginning with `$$` are output with a single `$`. This allows templates to contain keys that would otherwise be interpreted as operators.
+
+```csharp
+var template = JsonNode.Parse("""{"$$schema": "http://example.com/schema"}""");
+var result   = JsonE.Evaluate(template);
+Console.WriteLine(result); // {"$schema":"http://example.com/schema"}
+```
+
+## Error handling
+
+Evaluation throws `TemplateException` when:
+
+- String interpolation contains a syntactically invalid expression.
+- String interpolation resolves to an object or array.
+- The context is not a valid JSON-e context object.
+- An `$assert` operator fails.
+
+```csharp
+try
+{
+    var result = JsonE.Evaluate(template, context);
+}
+catch (TemplateException ex)
+{
+    Console.WriteLine($"Template error: {ex.Message}");
+}
+```

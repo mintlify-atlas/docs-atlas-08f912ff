@@ -1,0 +1,151 @@
+---
+title: 'JsonSchemaBuilderExtensions — Generation API reference'
+description: 'API reference for JsonSchemaBuilderExtensions in JsonSchema.Net.Generation. Automatically generate JSON Schema documents from .NET CLR types at runtime.'
+---
+
+`JsonSchemaBuilderExtensions` is a static class in the `Json.Schema.Generation` namespace that adds schema-generation methods to `JsonSchemaBuilder`. It bridges the runtime type system and JSON Schema, introspecting public fields and properties of a CLR type to produce a matching schema.
+
+Install the NuGet package to use this functionality:
+
+```bash
+dotnet add package JsonSchema.Net.Generation
+```
+
+## Methods
+
+### FromType\<T\>
+
+Generates a schema from a CLR type using the generic overload.
+
+```csharp
+public static JsonSchemaBuilder FromType<T>(
+    this JsonSchemaBuilder builder,
+    SchemaGeneratorConfiguration? configuration = null)
+```
+
+<ParamField body="builder" type="JsonSchemaBuilder" required>
+  The builder to populate with the generated schema keywords.
+</ParamField>
+
+<ParamField body="configuration" type="SchemaGeneratorConfiguration?">
+  Optional generation configuration. Defaults to `SchemaGeneratorConfiguration.Default` when `null`.
+</ParamField>
+
+<ResponseField name="returns" type="JsonSchemaBuilder">
+  The same builder instance, enabling fluent chaining.
+</ResponseField>
+
+```csharp
+var schema = new JsonSchemaBuilder()
+    .FromType<MyModel>()
+    .Build();
+```
+
+---
+
+### FromType
+
+Generates a schema from a `Type` instance. Useful when the type is only known at runtime.
+
+```csharp
+public static JsonSchemaBuilder FromType(
+    this JsonSchemaBuilder builder,
+    Type type,
+    SchemaGeneratorConfiguration? configuration = null)
+```
+
+<ParamField body="builder" type="JsonSchemaBuilder" required>
+  The builder to populate.
+</ParamField>
+
+<ParamField body="type" type="Type" required>
+  The CLR type to reflect. The generator reads public fields, public properties, and implemented interfaces.
+</ParamField>
+
+<ParamField body="configuration" type="SchemaGeneratorConfiguration?">
+  Optional generation configuration.
+</ParamField>
+
+<ResponseField name="returns" type="JsonSchemaBuilder">
+  The same builder instance for fluent chaining.
+</ResponseField>
+
+```csharp
+Type modelType = typeof(OrderLine);
+var schema = new JsonSchemaBuilder()
+    .FromType(modelType)
+    .Build();
+```
+
+## SchemaGeneratorConfiguration
+
+`SchemaGeneratorConfiguration` controls how the generator maps CLR constructs to JSON Schema keywords.
+
+<ResponseField name="Default" type="SchemaGeneratorConfiguration">
+  The shared default configuration instance.
+</ResponseField>
+
+<ResponseField name="Current" type="SchemaGeneratorConfiguration">
+  The configuration active for the current generation call. Set automatically by `FromType` before schema generation begins.
+</ResponseField>
+
+<ResponseField name="PropertyNameResolver" type="PropertyNameResolver" default="AsDeclared">
+  Controls how property names are mapped to JSON keys. Built-in resolvers include `AsDeclared`, `CamelCase`, `PascalCase`, `SnakeCase`, and `UpperSnakeCase`.
+</ResponseField>
+
+<ResponseField name="PropertyOrder" type="PropertyOrder" default="(declaration order)">
+  Controls the order in which properties appear in the generated schema.
+</ResponseField>
+
+<ResponseField name="DefaultDialect" type="Uri?" default="null">
+  When set, the generator adds a `$schema` keyword to the output matching the specified dialect URI.
+</ResponseField>
+
+<ResponseField name="StrictConditionals" type="bool" default="false">
+  When `true`, conditional keywords generated from attributes use stricter schemas.
+</ResponseField>
+
+<ResponseField name="ExternalReferences" type="Dictionary&lt;Type, Uri&gt;">
+  Maps CLR types to external schema URIs. Types in this dictionary are referenced via `$ref` rather than inlined.
+</ResponseField>
+
+<ResponseField name="Refiners" type="List&lt;ISchemaRefiner&gt;">
+  A list of custom refiners applied after initial generation. Implement `ISchemaRefiner` to add or modify keywords post-generation.
+</ResponseField>
+
+## Complete example
+
+```csharp
+using Json.Schema;
+using Json.Schema.Generation;
+
+public class CreateUserRequest
+{
+    [Required]
+    [MinLength(1), MaxLength(100)]
+    public string Name { get; set; } = "";
+
+    [Required]
+    [Format("email")]
+    public string Email { get; set; } = "";
+
+    [Minimum(0), Maximum(120)]
+    public int? Age { get; set; }
+}
+
+var config = new SchemaGeneratorConfiguration
+{
+    PropertyNameResolver = PropertyNameResolvers.CamelCase,
+    DefaultDialect = MetaSchemas.Draft202012Id
+};
+
+var schema = new JsonSchemaBuilder()
+    .FromType<CreateUserRequest>(config)
+    .Build();
+
+// Schema now contains:
+// { "$schema": "...", "type": "object", "properties": { "name": {...}, "email": {...}, "age": {...} }, "required": ["name","email"] }
+var result = schema.Evaluate(
+    JsonDocument.Parse("""{"name":"Alice","email":"alice@example.com"}""").RootElement);
+Console.WriteLine(result.IsValid); // true
+```

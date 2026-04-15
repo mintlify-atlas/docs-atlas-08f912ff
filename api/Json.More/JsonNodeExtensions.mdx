@@ -1,0 +1,204 @@
+---
+title: 'JsonNodeExtensions class — Json.More API reference'
+description: 'API reference for JsonNodeExtensions in Json.More. Equality, hashing, type-safe value extraction, and serialization helpers for JsonNode and JsonValue.'
+---
+
+`JsonNodeExtensions` is a static class in the `Json.More` namespace providing utility extension methods for `JsonNode`, `JsonValue`, and related types. It fills gaps in the `System.Text.Json.Nodes` API, particularly around equality semantics, numeric handling, and null-safe serialization.
+
+## Equality
+
+### IsEquivalentTo
+
+Performs a deep, JSON-value–based equality comparison between two `JsonNode` instances.
+
+```csharp
+public static bool IsEquivalentTo(this JsonNode? a, JsonNode? b)
+```
+
+<ParamField body="a" type="JsonNode?" required>
+  The first node.
+</ParamField>
+
+<ParamField body="b" type="JsonNode?" required>
+  The second node.
+</ParamField>
+
+<ResponseField name="returns" type="bool">
+  `true` when both nodes are structurally and value-equivalent according to JSON semantics.
+</ResponseField>
+
+<Note>
+  `JsonNode.DeepEquals` has a known issue with `decimal` comparisons (see [dotnet/runtime#97490](https://github.com/dotnet/runtime/issues/97490)). `IsEquivalentTo` avoids this issue and is the recommended alternative.
+</Note>
+
+```csharp
+var a = JsonNode.Parse("1.0");
+var b = JsonNode.Parse("1");
+Console.WriteLine(a.IsEquivalentTo(b)); // true — numerically equal
+```
+
+---
+
+### GetEquivalenceHashCode
+
+Computes a consistent, value-based hash code for a `JsonNode`.
+
+```csharp
+public static int GetEquivalenceHashCode(this JsonNode node, int maxHashDepth = -1)
+```
+
+<ParamField body="node" type="JsonNode" required>
+  The node to hash.
+</ParamField>
+
+<ParamField body="maxHashDepth" type="int" default="-1">
+  Maximum depth to descend when hashing nested structures. `-1` means unlimited depth.
+</ParamField>
+
+<ResponseField name="returns" type="int">
+  A hash code consistent with `IsEquivalentTo` semantics.
+</ResponseField>
+
+## Value extraction
+
+### GetNumber
+
+Extracts the numeric value from a `JsonValue`, regardless of the underlying CLR type.
+
+```csharp
+public static decimal? GetNumber(this JsonValue value)
+```
+
+<ParamField body="value" type="JsonValue" required>
+  The JSON value to inspect.
+</ParamField>
+
+<ResponseField name="returns" type="decimal?">
+  The numeric value as `decimal`, or `null` if the node does not represent a number.
+</ResponseField>
+
+```csharp
+JsonValue v = JsonValue.Create(42);
+decimal? n  = v.GetNumber(); // 42
+```
+
+---
+
+### GetInteger
+
+Extracts the value as a `long` if it is an integer.
+
+```csharp
+public static long? GetInteger(this JsonValue value)
+```
+
+<ParamField body="value" type="JsonValue" required>
+  The JSON value to inspect.
+</ParamField>
+
+<ResponseField name="returns" type="long?">
+  The integer value, or `null` if the node is non-numeric or has a fractional part.
+</ResponseField>
+
+<Warning>
+  `ulong` values are not supported. Calling this method on a `JsonValue` backed by a `ulong` throws `NotSupportedException`.
+</Warning>
+
+---
+
+### GetString
+
+Extracts the string value from a `JsonValue`, handling both `string`-backed and `JsonElement`-backed nodes.
+
+```csharp
+public static string? GetString(this JsonValue value)
+```
+
+<ParamField body="value" type="JsonValue" required>
+  The JSON value to inspect.
+</ParamField>
+
+<ResponseField name="returns" type="string?">
+  The string value, or `null` if the node does not represent a string.
+</ResponseField>
+
+<Note>
+  `JsonValue.GetValue&lt;string&gt;()` can fail when the value is backed by a `JsonElement`. Use `GetString()` to handle both cases correctly.
+</Note>
+
+---
+
+### GetBool
+
+Extracts the boolean value from a `JsonValue`, handling `JsonElement`-backed nodes.
+
+```csharp
+public static bool? GetBool(this JsonValue value)
+```
+
+<ParamField body="value" type="JsonValue" required>
+  The JSON value to inspect.
+</ParamField>
+
+<ResponseField name="returns" type="bool?">
+  The boolean value, or `null` if the node does not represent a boolean.
+</ResponseField>
+
+## Serialization helpers
+
+### AsJsonString
+
+Serializes a `JsonNode?` to a JSON string, returning `"null"` for null references instead of throwing.
+
+```csharp
+public static string AsJsonString(this JsonNode? node, JsonSerializerOptions? options = null)
+```
+
+<ParamField body="node" type="JsonNode?" required>
+  The node to serialize.
+</ParamField>
+
+<ParamField body="options" type="JsonSerializerOptions?">
+  Optional serializer options forwarded to `ToJsonString()`.
+</ParamField>
+
+<ResponseField name="returns" type="string">
+  The JSON string, or `"null"` when `node` is `null`.
+</ResponseField>
+
+```csharp
+JsonNode? node = null;
+Console.WriteLine(node.AsJsonString()); // null
+
+node = JsonValue.Create(42);
+Console.WriteLine(node.AsJsonString()); // 42
+```
+
+## Usage pattern
+
+These helpers are typically used together when working with dynamically-typed JSON:
+
+```csharp
+using Json.More;
+
+JsonNode? value = GetSomeJsonNode();
+
+// Safe numeric check
+if (value is JsonValue jv)
+{
+    var num = jv.GetNumber();
+    if (num.HasValue)
+        Console.WriteLine($"Numeric value: {num.Value}");
+
+    var str = jv.GetString();
+    if (str is not null)
+        Console.WriteLine($"String value: {str}");
+
+    var b = jv.GetBool();
+    if (b.HasValue)
+        Console.WriteLine($"Bool value: {b.Value}");
+}
+
+// Null-safe serialization
+Console.WriteLine(value.AsJsonString());
+```

@@ -1,0 +1,107 @@
+---
+title: "Generate random JSON data that conforms to a schema"
+description: "Use JsonSchema.Net.DataGeneration to produce random JSON instances that conform to a schema, powered by the Bogus fake data library."
+---
+
+`JsonSchema.Net.DataGeneration` adds a `GenerateData()` extension method to `JsonSchema`. Given any valid schema, it produces a random `JsonNode` that satisfies all of the schema's constraints. This is useful for populating test fixtures, mocking API responses, or exploring what a schema allows.
+
+## Installation
+
+<CodeGroup>
+
+```bash dotnet CLI
+dotnet add package JsonSchema.Net.DataGeneration
+```
+
+```powershell Package Manager Console
+Install-Package JsonSchema.Net.DataGeneration
+```
+
+```xml PackageReference
+<PackageReference Include="JsonSchema.Net.DataGeneration" Version="*" />
+```
+
+</CodeGroup>
+
+<Note>
+  `JsonSchema.Net.DataGeneration` depends on [Bogus](https://github.com/bchavez/Bogus) for random value generation. Bogus is pulled in automatically as a transitive dependency.
+</Note>
+
+## Basic usage
+
+Call `GenerateData()` on any `JsonSchema` instance:
+
+```csharp
+using Json.Schema;
+using Json.Schema.DataGeneration;
+
+var schema = JsonSchema.FromText("""
+    {
+      "type": "object",
+      "properties": {
+        "id":    { "type": "integer", "minimum": 1 },
+        "email": { "type": "string", "format": "email" },
+        "score": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "required": ["id", "email"]
+    }
+    """);
+
+GenerationResult result = schema.GenerateData();
+
+if (result.IsSuccess)
+    Console.WriteLine(result.Result); // e.g. {"id":42,"email":"user@example.com","score":73.5}
+else
+    Console.WriteLine(result.ErrorMessage);
+```
+
+## GenerationResult
+
+`GenerateData()` returns a `GenerationResult`, not the raw node directly, so you can distinguish between a successful generation and a schema that could not be satisfied.
+
+| Member | Type | Description |
+|---|---|---|
+| `IsSuccess` | `bool` | `true` when generation succeeded. |
+| `Result` | `JsonNode?` | The generated JSON value. Non-null when `IsSuccess` is `true`. |
+| `ErrorMessage` | `string?` | A description of why generation failed. Set when `IsSuccess` is `false`. |
+| `InnerResults` | `IEnumerable<GenerationResult>?` | Nested failure details when multiple attempts were made. |
+| `Location` | `JsonPointer?` | Instance location at which the failure occurred, when known. |
+| `SchemaLocations` | `IReadOnlyList<JsonPointer>?` | Schema locations related to the failure, when known. |
+
+## Supported schema keywords
+
+The generator interprets a broad set of JSON Schema keywords when constructing values:
+
+- **Type selection** — `type` and inferred types from constraints
+- **Constant and enumeration** — `const`, `enum` (always satisfied first when present)
+- **Strings** — `minLength`, `maxLength`, `pattern` (regex-based generation)
+- **Numbers and integers** — `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`
+- **Arrays** — `items`, `prefixItems`, `contains`, `minItems`, `maxItems`, `uniqueItems`
+- **Objects** — `properties`, `additionalProperties`, `required`, `minProperties`, `maxProperties`
+- **Combiners** — `allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/`else`
+- **References** — `$ref` (resolved via the schema registry)
+- **Boolean schemas** — `true` (any value) and `false` (generation fails immediately)
+
+<Warning>
+  Schemas that are internally contradictory — for example `{ "type": "integer", "minimum": 10, "maximum": 5 }` — will fail generation. Check `IsSuccess` and `ErrorMessage` before using the result.
+</Warning>
+
+## How generation works
+
+The generator analyses the schema to build a `RequirementsContext` — an internal representation of all constraints the output value must satisfy. It then selects a type (object, array, string, number, integer, boolean, or null) and delegates to a type-specific generator backed by Bogus randomness. `const` and `enum` values are satisfied first, before any other generator runs.
+
+When `anyOf` or `oneOf` is present, the generator enumerates the possible variations, shuffles them, and tries each in turn until one succeeds. Variations with contradictory constraints are skipped.
+
+## Repeated generation
+
+Each call to `GenerateData()` produces a new, independently random value. There is no seed or replay mechanism exposed — randomness comes from Bogus's internal `Randomizer`.
+
+```csharp
+// Generate 5 sample objects
+for (int i = 0; i < 5; i++)
+{
+    var result = schema.GenerateData();
+    if (result.IsSuccess)
+        Console.WriteLine(result.Result);
+}
+```
